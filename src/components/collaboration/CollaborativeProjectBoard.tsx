@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { DragDropContext, Droppable, Draggable, DropResult, DroppableProvided, DraggableProvided } from 'react-beautiful-dnd'
-import { SwimLane } from '../SwimLane'
+// Removed SwimLane import - using inline lane structure instead
 import { BlockCardDB } from '../BlockCardDB'
 import { BlockModal } from '../BlockModal'
 import { PresenceIndicator } from './PresenceIndicator'
@@ -543,18 +543,29 @@ export function CollaborativeProjectBoard({
 
                   return (
                     <div key={lane} className="flex flex-col min-h-0 group">
-                      <SwimLane
-                        lane={lane}
-                        title={title}
-                        description={description}
-                        count={count}
-                        maxCount={laneConfig.maxBlocks}
-                        color={color}
-                        icon={icon}
-                        onAddBlock={handleCreateBlock}
-                        onLaneSettings={onLaneSettings}
-                        className="flex-1"
-                      >
+                      <div className="flex-1 border border-border rounded-lg bg-card/50">
+                        {/* Lane Header */}
+                        <div className="p-4 border-b border-border">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">{icon}</span>
+                              <h3 className="font-semibold text-foreground">{title}</h3>
+                              <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full">
+                                {count}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleCreateBlock(lane)}
+                              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            >
+                              + Add
+                            </button>
+                          </div>
+                          <p className="text-xs text-muted-foreground">{description}</p>
+                        </div>
+                        
+                        {/* Lane Content */}
+                        <div className="p-4">
                         <Droppable droppableId={lane} type="BLOCK">
                           {(provided: DroppableProvided, snapshot) => (
                             <div
@@ -634,7 +645,8 @@ export function CollaborativeProjectBoard({
                             </div>
                           )}
                         </Droppable>
-                      </SwimLane>
+                        </div>
+                      </div>
                     </div>
                   )
                 })}
