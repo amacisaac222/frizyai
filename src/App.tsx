@@ -2,8 +2,6 @@ import { Routes, Route } from 'react-router-dom'
 import { Home } from './pages/Home'
 import { Dashboard } from './pages/Dashboard'
 import { DesignSystem } from './pages/DesignSystem'
-import { AppDemo } from './pages/AppDemo'
-import { TestDB } from './pages/TestDB'
 import { CollaborativeTest } from './pages/CollaborativeTest'
 import { VerticalFlowDemo } from './pages/VerticalFlowDemo'
 import { NewHome } from './pages/NewHome'
@@ -25,7 +23,6 @@ function App() {
         <Route path="/auth/signup" element={<Signup />} />
         
         {/* Demo routes (public for now) */}
-        <Route path="/app" element={<AppDemo />} />
         <Route path="/vertical-flow" element={<VerticalFlowDemo />} />
         <Route path="/new-home" element={<NewHome />} />
         <Route path="/features" element={<Features />} />
@@ -34,7 +31,6 @@ function App() {
         {/* Protected routes - require authentication */}
         <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
         <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-        <Route path="/test-db" element={<RequireAuth><TestDB /></RequireAuth>} />
         <Route path="/test-collaboration" element={<RequireAuth><CollaborativeTest /></RequireAuth>} />
         
         {/* Default layout routes */}
