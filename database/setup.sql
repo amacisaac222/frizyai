@@ -301,10 +301,8 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Insert some sample data for testing
-INSERT INTO public.projects (id, name, description, created_by, status) VALUES
-    ('sample-project-1', 'Sample Project', 'A demo project for testing', (SELECT id FROM auth.users LIMIT 1), 'active')
-ON CONFLICT (id) DO NOTHING;
+-- Sample data will be created automatically when users sign up
+-- No sample data insertion needed here since there are no users yet
 
 -- Success message
 SELECT 'Frizy database setup completed successfully! 🎉' as message;

@@ -18,7 +18,7 @@ import {
   MessageSquare,
   Sparkles
 } from 'lucide-react'
-import { DraggableProjectBoardDB } from '@/components/DraggableProjectBoardDB'
+import { InteractiveVerticalBoard } from '@/components/boards/InteractiveVerticalBoard'
 import { CreateProjectModal } from '@/components/modals/CreateProjectModal'
 import { Button, Badge, Card, CardContent, CardHeader } from '@/components/ui'
 import { LightningBolt } from '@/components/ui/LightningLogo'
@@ -278,9 +278,13 @@ export function Dashboard() {
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
         {selectedProject ? (
-          <DraggableProjectBoardDB 
+          <InteractiveVerticalBoard 
             projectId={selectedProject}
-            className="h-full"
+            blocks={[]} // Will be loaded by the component
+            onBlockCreate={() => {}}
+            onBlockUpdate={() => {}}
+            onBlockDelete={() => {}}
+            onBlockMove={() => {}}
           />
         ) : (
           <div className="h-full flex items-center justify-center">
