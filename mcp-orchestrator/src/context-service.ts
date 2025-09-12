@@ -5,6 +5,7 @@ import { ContextPreview, ContextPreviewItem } from './types.js';
 export class ContextService {
   private db: Database;
   private openai: OpenAI | null = null;
+  private embeddingsCache = new Map<string, number[]>();
 
   constructor(database: Database) {
     this.db = database;
@@ -44,10 +45,32 @@ export class ContextService {
     // Score and rank all context items
     const scoredItems: ContextPreviewItem[] = [];
 
+    // If we have a user query, use semantic search when available
+    let semanticBoosts = new Map<string, number>();
+    if (userQuery && this.openai) {
+      try {
+        const queryEmbedding = await this.generateEmbedding(userQuery);
+        const semanticResults = await this.db.searchContextByEmbedding(projectId, queryEmbedding, 50);
+        
+        // Create semantic relevance boost map
+        semanticResults.forEach((result: any, index: number) => {
+          const boost = Math.max(0, 0.5 - (result.distance / 2)); // Convert distance to boost
+          semanticBoosts.set(result.id, boost);
+        });
+      } catch (error) {
+        console.warn('Semantic search failed, using standard scoring:', error);
+      }
+    }
+
     // Add blocks as context items
     if (includeBlocks) {
       graph.blocks.forEach(block => {
-        const score = this.scoreBlock(block);
+        const baseScore = this.scoreBlock(block);
+        const semanticBoost = semanticBoosts.get(block.id) || 0;
+        const textualBoost = userQuery ? this.calculateTextualRelevance(userQuery, block.title + ' ' + (block.content || '')) : 0;
+        
+        const score = Math.min(1.0, baseScore + semanticBoost + textualBoost);
+        
         scoredItems.push({
           id: block.id,
           type: `block_${block.lane}`,
@@ -64,7 +87,12 @@ export class ContextService {
     // Add context items
     if (includeContext) {
       graph.context_items.forEach(item => {
-        const score = this.scoreContextItem(item);
+        const baseScore = this.scoreContextItem(item);
+        const semanticBoost = semanticBoosts.get(item.id) || 0;
+        const textualBoost = userQuery ? this.calculateTextualRelevance(userQuery, (item.title || '') + ' ' + item.content) : 0;
+        
+        const score = Math.min(1.0, baseScore + semanticBoost + textualBoost);
+        
         scoredItems.push({
           id: item.id,
           type: item.type,
@@ -301,5 +329,117 @@ Provide a bulleted summary that captures the essential information:
     ].filter(Boolean).join(' | ');
 
     return summary;
+  }
+
+  private async generateEmbedding(text: string): Promise<number[]> {
+    if (!this.openai) {
+      throw new Error('OpenAI client not configured');
+    }
+
+    // Check cache first
+    const cacheKey = this.hashText(text);
+    if (this.embeddingsCache.has(cacheKey)) {
+      return this.embeddingsCache.get(cacheKey)!;
+    }
+
+    try {
+      const response = await this.openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: text.slice(0, 8192), // Truncate to model limit
+        encoding_format: 'float'
+      });
+
+      const embedding = response.data[0].embedding;
+      
+      // Cache the embedding
+      this.embeddingsCache.set(cacheKey, embedding);
+      
+      // Limit cache size to prevent memory issues
+      if (this.embeddingsCache.size > 100) {
+        const firstKey = this.embeddingsCache.keys().next().value;
+        if (firstKey) {
+          this.embeddingsCache.delete(firstKey);
+        }
+      }
+
+      return embedding;
+    } catch (error) {
+      console.error('Failed to generate embedding:', error);
+      throw error;
+    }
+  }
+
+  private calculateTextualRelevance(query: string, content: string): number {
+    const queryTerms = query.toLowerCase().split(/\s+/);
+    const contentLower = content.toLowerCase();
+    
+    let relevanceScore = 0;
+    let matchCount = 0;
+    
+    for (const term of queryTerms) {
+      if (term.length < 3) continue; // Skip very short terms
+      
+      const occurrences = (contentLower.match(new RegExp(term, 'g')) || []).length;
+      if (occurrences > 0) {
+        matchCount++;
+        relevanceScore += Math.min(occurrences * 0.1, 0.3); // Cap per-term contribution
+      }
+    }
+    
+    // Boost if multiple query terms match
+    if (matchCount > 1) {
+      relevanceScore *= (1 + (matchCount - 1) * 0.2);
+    }
+    
+    return Math.min(relevanceScore, 0.5); // Cap total textual boost
+  }
+
+  private hashText(text: string): string {
+    let hash = 0;
+    if (text.length === 0) return hash.toString();
+    
+    for (let i = 0; i < text.length; i++) {
+      const char = text.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32-bit integer
+    }
+    
+    return hash.toString();
+  }
+
+  // Background embedding processing for context items
+  async processContextEmbeddings(projectId: string): Promise<void> {
+    if (!this.openai) {
+      console.log('OpenAI not configured, skipping embedding generation');
+      return;
+    }
+
+    try {
+      const contextItems = await this.db.getContextItemsByProject(projectId, 100);
+      
+      for (const item of contextItems) {
+        try {
+          const text = `${item.title || ''} ${item.content}`.trim();
+          const embedding = await this.generateEmbedding(text);
+          
+          // Update context item with embedding in database
+          await this.db.query(`
+            UPDATE context_items 
+            SET embedding = $1::vector
+            WHERE id = $2
+          `, [JSON.stringify(embedding), item.id]);
+          
+          console.log(`Generated embedding for context item: ${item.id}`);
+          
+          // Rate limiting to avoid API limits
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+        } catch (error) {
+          console.error(`Failed to process embedding for ${item.id}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to process context embeddings:', error);
+    }
   }
 }
