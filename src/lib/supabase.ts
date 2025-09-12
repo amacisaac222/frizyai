@@ -16,8 +16,7 @@ export const supabase: SupabaseClient<Database> = createClient<Database>(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true,
-      flowType: 'pkce', // Use PKCE flow for enhanced security
-      lock: true // Enable session locking
+      flowType: 'pkce' // Use PKCE flow for enhanced security
     },
     global: {
       headers: {

@@ -169,9 +169,7 @@ export function CreateProjectModal({ isOpen, onClose, onProjectCreated }: Create
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {categorizedTemplates.map((template) => {
-                const Icon = template.icon
-                return (
+              {categorizedTemplates.map((template) => (
                   <button
                     key={template.id}
                     onClick={() => handleTemplateSelect(template.id)}
@@ -185,7 +183,7 @@ export function CreateProjectModal({ isOpen, onClose, onProjectCreated }: Create
                     <div className="flex flex-col gap-3">
                       <div className="flex items-start gap-3">
                         <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gradient-to-br from-purple-500 to-pink-500 flex-shrink-0">
-                          <Icon className="w-5 h-5 text-white" />
+                          <span className="text-lg">{template.icon}</span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="font-semibold text-sm mb-1">{template.name}</h4>
@@ -200,8 +198,7 @@ export function CreateProjectModal({ isOpen, onClose, onProjectCreated }: Create
                       </p>
                     </div>
                   </button>
-                )
-              })}
+                ))}
             </div>
 
             <div className="flex justify-between pt-4 border-t">
