@@ -1,20 +1,26 @@
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
+import http from 'http';
 import { v4 as uuidv4 } from 'uuid';
 import { Database } from './database.js';
 import { ContextService } from './context-service.js';
+import { GraphQLServer } from './graphql-server.js';
 import { ApiResponse } from './types.js';
 
 export class APIServer {
   private app: express.Application;
+  private httpServer: http.Server;
   private db: Database;
   private contextService: ContextService;
+  private graphqlServer: GraphQLServer;
 
   constructor(database: Database, contextService: ContextService) {
     this.db = database;
     this.contextService = contextService;
+    this.graphqlServer = new GraphQLServer(database, contextService);
     this.app = express();
+    this.httpServer = http.createServer(this.app);
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -478,12 +484,16 @@ export class APIServer {
     return { processed: false, message: 'No event created' };
   }
 
-  start(port: number = 4000): Promise<void> {
+  async start(port: number = 4000): Promise<void> {
+    // Start GraphQL server
+    await this.graphqlServer.start(this.app, this.httpServer);
+    
     return new Promise((resolve) => {
-      this.app.listen(port, () => {
+      this.httpServer.listen(port, () => {
         console.log(`🚀 Frizy API Server listening on port ${port}`);
         console.log(`📊 Health check: http://localhost:${port}/health`);
         console.log(`🔗 MCP integration ready`);
+        console.log(`📈 GraphQL playground: http://localhost:${port}/graphql`);
         resolve();
       });
     });
