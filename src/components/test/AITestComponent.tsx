@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Button, Card, CardContent, CardHeader } from '@/components/ui'
 import { analyzeAndSuggestBlocks, createDemoSuggestions } from '@/lib/claude'
-import { Brain, Zap, CheckCircle, XCircle } from 'lucide-react'
+import { projectService } from '@/lib/services/projectService'
+import { Brain, Zap, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 
 export function AITestComponent() {
   const [testing, setTesting] = useState(false)
@@ -49,6 +50,15 @@ export function AITestComponent() {
     }
   }
 
+  const resetProjects = () => {
+    projectService.resetToMockData()
+    window.location.reload()
+  }
+
+  const debugStorage = () => {
+    projectService.debugStorage()
+  }
+
   return (
     <Card className="w-full max-w-2xl">
       <CardHeader>
@@ -64,23 +74,43 @@ export function AITestComponent() {
       </CardHeader>
       
       <CardContent className="space-y-4">
-        <Button 
-          onClick={testAISuggestions} 
-          disabled={testing}
-          className="w-full bg-gradient-to-r from-purple-600 to-pink-600"
-        >
-          {testing ? (
-            <>
-              <Zap className="w-4 h-4 mr-2 animate-spin" />
-              Testing AI Suggestions...
-            </>
-          ) : (
-            <>
-              <Brain className="w-4 h-4 mr-2" />
-              Test AI Block Suggestions
-            </>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={testAISuggestions} 
+            disabled={testing}
+            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600"
+          >
+            {testing ? (
+              <>
+                <Zap className="w-4 h-4 mr-2 animate-spin" />
+                Testing AI Suggestions...
+              </>
+            ) : (
+              <>
+                <Brain className="w-4 h-4 mr-2" />
+                Test AI Block Suggestions
+              </>
+            )}
+          </Button>
+          
+          <Button 
+            onClick={resetProjects}
+            variant="outline"
+            className="px-4"
+            title="Reset to demo projects"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </Button>
+          
+          <Button 
+            onClick={debugStorage}
+            variant="outline"
+            className="px-4"
+            title="Debug localStorage (check console)"
+          >
+            🐛
+          </Button>
+        </div>
 
         {testResult && (
           <div className={`p-4 rounded-lg border flex items-start gap-3 ${

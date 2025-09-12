@@ -11,10 +11,31 @@ export interface ProjectWithStats extends DBProject {
 }
 
 class ProjectService {
+  private getStoredProjects(): ProjectWithStats[] {
+    const stored = localStorage.getItem('frizy_projects')
+    if (stored) {
+      try {
+        return JSON.parse(stored)
+      } catch (error) {
+        console.error('Error parsing stored projects:', error)
+      }
+    }
+    return []
+  }
+
+  private saveProjects(projects: ProjectWithStats[]) {
+    localStorage.setItem('frizy_projects', JSON.stringify(projects))
+  }
+
   async getProjects(): Promise<{ data: ProjectWithStats[] | null; error: string | null }> {
     try {
-      // For now, return mock data since we don't have full database setup
-      // In production, this would query the projects table with joins to get block stats
+      // Check for stored projects first
+      const storedProjects = this.getStoredProjects()
+      if (storedProjects.length > 0) {
+        return { data: storedProjects, error: null }
+      }
+
+      // Fall back to mock data for demo purposes
       const mockProjects: ProjectWithStats[] = [
         {
           id: 'frizy-mvp',
@@ -101,7 +122,20 @@ class ProjectService {
       // In production, this would insert into the database
       // const { data, error } = await supabase.from('projects').insert(newProject).select().single()
 
-      // For now, just return the mock project
+      // For development, save to localStorage
+      const existingProjects = this.getStoredProjects()
+      const projectWithStats: ProjectWithStats = {
+        ...newProject,
+        blocksCount: 0,
+        activeBlocks: 0,
+        completedBlocks: 0,
+        claudeSessions: 0,
+        lastWorked: new Date().toISOString()
+      }
+      
+      existingProjects.push(projectWithStats)
+      this.saveProjects(existingProjects)
+
       await new Promise(resolve => setTimeout(resolve, 500)) // Simulate API delay
 
       return { data: newProject, error: null }
@@ -144,6 +178,36 @@ class ProjectService {
   private getRandomColor(): string {
     const colors = ['pink', 'cyan', 'purple', 'yellow', 'green']
     return colors[Math.floor(Math.random() * colors.length)]
+  }
+
+  // Development/Debug utilities
+  clearStoredProjects() {
+    localStorage.removeItem('frizy_projects')
+    console.log('Cleared all stored projects')
+  }
+
+  resetToMockData() {
+    this.clearStoredProjects()
+    console.log('Reset to mock data - refresh the page to see changes')
+  }
+
+  // Debug method to check localStorage state
+  debugStorage() {
+    const stored = localStorage.getItem('frizy_projects')
+    console.log('Current localStorage state:', stored)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored)
+        console.log('Parsed projects:', parsed.length, 'projects')
+        parsed.forEach((project: any, index: number) => {
+          console.log(`  ${index + 1}. ${project.name} (${project.id})`)
+        })
+      } catch (error) {
+        console.error('Error parsing stored data:', error)
+      }
+    } else {
+      console.log('No projects in localStorage')
+    }
   }
 
   // Template-based project initialization

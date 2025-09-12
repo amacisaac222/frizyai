@@ -89,10 +89,9 @@ export function Dashboard() {
       setProjectsLoading(false)
     }
 
-    if (dbUser) {
-      loadProjects()
-    }
-  }, [dbUser])
+    // Always load projects in development mode, regardless of auth state
+    loadProjects()
+  }, [])
 
   // Dashboard stats
   const stats: DashboardStats = {
