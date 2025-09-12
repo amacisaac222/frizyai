@@ -376,7 +376,7 @@ export class EventConsumer {
     const { id, name, description, owner_id, metadata = {} } = event.payload;
 
     await this.db.query(`
-      INSERT INTO projects (id, name, description, owner_id, metadata, created_at, updated_at)
+      INSERT INTO projects (id, name, description, created_by, metadata, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $6)
       ON CONFLICT (id) DO NOTHING
     `, [id, name, description, owner_id, metadata, event.created_at]);

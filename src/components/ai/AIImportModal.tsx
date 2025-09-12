@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { Brain, Sparkles, Loader2, Check, X, Edit3, Wand2 } from 'lucide-react'
+import { Brain, Sparkles, Loader2, Check, Edit3, Wand2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Modal, Button, Textarea, Select, SelectOption, Badge, Card, CardContent } from '@/components/ui'
 import { analyzeAndSuggestBlocks, createDemoSuggestions, IMPORT_MODES, type ImportMode, type SuggestedBlock, type AnalysisResult } from '@/lib/claude'
@@ -65,13 +65,13 @@ export function AIImportModal({
     try {
       let result: AnalysisResult
 
-      // Check if we have an API key, otherwise use demo
-      if (!import.meta.env.VITE_OPENAI_API_KEY || import.meta.env.VITE_OPENAI_API_KEY === 'your_openai_api_key') {
+      // Check if we have Claude API key, otherwise use demo
+      if (!import.meta.env.VITE_ANTHROPIC_API_KEY || import.meta.env.VITE_ANTHROPIC_API_KEY === 'your_anthropic_api_key') {
         // Use demo suggestions
         await new Promise(resolve => setTimeout(resolve, 2000)) // Simulate API delay
         result = createDemoSuggestions(inputText, selectedMode)
       } else {
-        // Use real OpenAI API
+        // Use real Claude API
         result = await analyzeAndSuggestBlocks(inputText, selectedMode, projectContext)
       }
 

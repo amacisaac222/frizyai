@@ -24,20 +24,41 @@ export class Database {
 
   // Event operations
   async createEvent(event: Omit<Event, 'id' | 'created_at'>): Promise<Event> {
-    const query = `
-      INSERT INTO events (project_id, type, actor_id, payload)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, project_id, type, actor_id, payload, created_at
-    `;
-    
-    const result = await this.pool.query(query, [
-      event.project_id,
-      event.type,
-      event.actor_id || null,
-      event.payload
-    ]);
-    
-    return result.rows[0] as Event;
+    // Try the new format first
+    try {
+      const query = `
+        INSERT INTO events (project_id, type, actor_id, payload)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, project_id, type, actor_id, payload, created_at
+      `;
+      
+      const result = await this.pool.query(query, [
+        event.project_id,
+        event.type,
+        event.actor_id || null,
+        event.payload
+      ]);
+      
+      return result.rows[0] as Event;
+    } catch (error: any) {
+      // Fallback to existing events table format
+      console.warn('Using fallback event creation for existing schema');
+      const fallbackQuery = `
+        INSERT INTO events (stream_id, stream_type, event_type, event_data, user_id, metadata)
+        VALUES ($1, 'project', $2, $3, $4, $5)
+        RETURNING id, stream_id as project_id, event_type as type, user_id as actor_id, event_data as payload, created_at
+      `;
+      
+      const result = await this.pool.query(fallbackQuery, [
+        event.project_id,
+        event.type,
+        event.payload,
+        event.actor_id || null,
+        {}
+      ]);
+      
+      return result.rows[0] as Event;
+    }
   }
 
   async getEventsByProject(projectId: string, limit = 100): Promise<Event[]> {
@@ -152,7 +173,7 @@ export class Database {
   // Project operations
   async getProject(projectId: string) {
     const query = `
-      SELECT id, name, description, owner_id, metadata, created_at, updated_at
+      SELECT id, name, description, created_by as owner_id, metadata, created_at, updated_at
       FROM projects
       WHERE id = $1
     `;
@@ -163,9 +184,9 @@ export class Database {
 
   async getProjectsByUser(userId: string) {
     const query = `
-      SELECT id, name, description, owner_id, metadata, created_at, updated_at
+      SELECT id, name, description, created_by as owner_id, metadata, created_at, updated_at
       FROM projects
-      WHERE owner_id = $1
+      WHERE created_by = $1
       ORDER BY updated_at DESC
     `;
     

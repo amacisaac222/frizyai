@@ -106,40 +106,34 @@ export function AuthProvider({ children }: AuthProviderProps) {
     try {
       setLoading(true)
       
-      // Demo mode for development
-      if (email === 'demo@frizy.ai' && password === 'demo') {
-        // Create a mock user for demo
-        const mockUser = {
-          id: 'demo-user-123',
-          email: 'demo@frizy.ai',
-          created_at: new Date().toISOString(),
-          app_metadata: {},
-          user_metadata: { full_name: 'Demo User' },
-          aud: 'authenticated',
-          role: 'authenticated'
-        } as any
-        
-        setUser(mockUser)
-        setSession({ user: mockUser } as any)
-        
-        // Create mock DB user
-        const mockDbUser = {
-          id: 'demo-user-123',
-          email: 'demo@frizy.ai',
-          full_name: 'Demo User',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        } as any
-        setDbUser(mockDbUser)
-        
-        return { error: null }
+      // Input validation
+      if (!email || !email.includes('@')) {
+        return { error: 'Please enter a valid email address' }
       }
       
-      // Try real Supabase auth for production
+      if (!password || password.length < 6) {
+        return { error: 'Password must be at least 6 characters long' }
+      }
+      
+      // Attempt authentication with Supabase
       const result = await signIn(email, password)
       return { error: null }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to sign in'
+      let message = 'Failed to sign in'
+      
+      if (error instanceof Error) {
+        // Handle specific Supabase auth errors
+        if (error.message.includes('Invalid login credentials')) {
+          message = 'Invalid email or password'
+        } else if (error.message.includes('Email not confirmed')) {
+          message = 'Please check your email and confirm your account'
+        } else if (error.message.includes('Too many requests')) {
+          message = 'Too many login attempts. Please try again later'
+        } else {
+          message = error.message
+        }
+      }
+      
       return { error: message }
     } finally {
       setLoading(false)
@@ -150,10 +144,51 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const handleSignUp = async (email: string, password: string, metadata?: { full_name?: string }) => {
     try {
       setLoading(true)
+      
+      // Enhanced input validation
+      if (!email || !email.includes('@') || email.length < 5) {
+        return { error: 'Please enter a valid email address' }
+      }
+      
+      if (!password || password.length < 8) {
+        return { error: 'Password must be at least 8 characters long' }
+      }
+      
+      // Password strength validation
+      const hasUpperCase = /[A-Z]/.test(password)
+      const hasLowerCase = /[a-z]/.test(password)
+      const hasNumbers = /\d/.test(password)
+      
+      if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+        return { error: 'Password must contain uppercase, lowercase, and numbers' }
+      }
+      
+      // Full name validation
+      if (metadata?.full_name && metadata.full_name.trim().length < 2) {
+        return { error: 'Full name must be at least 2 characters long' }
+      }
+      
+      // Attempt registration with Supabase
       const result = await signUp(email, password, metadata)
       return { error: null }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to sign up'
+      let message = 'Failed to create account'
+      
+      if (error instanceof Error) {
+        // Handle specific Supabase auth errors
+        if (error.message.includes('User already registered')) {
+          message = 'An account with this email already exists'
+        } else if (error.message.includes('Password should be')) {
+          message = 'Password does not meet security requirements'
+        } else if (error.message.includes('Invalid email')) {
+          message = 'Please enter a valid email address'
+        } else if (error.message.includes('Signup is disabled')) {
+          message = 'Account registration is temporarily disabled'
+        } else {
+          message = error.message
+        }
+      }
+      
       return { error: message }
     } finally {
       setLoading(false)

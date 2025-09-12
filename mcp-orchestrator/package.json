@@ -19,7 +19,8 @@
     "start:embeddings": "node dist/embedding-processor.js",
     "test": "vitest",
     "test:watch": "vitest --watch",
-    "test:integration": "tsx src/integration-test.ts"
+    "test:integration": "tsx src/integration-test.ts",
+    "migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
     "@apollo/server": "^4.12.2",

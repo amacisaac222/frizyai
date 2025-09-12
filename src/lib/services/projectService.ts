@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import type { Project as DBProject, ProjectInsert, ProjectUpdate } from '@/lib/database.types'
+import type { ProjectTemplate } from '@/lib/templates/projectTemplates'
 
 export interface ProjectWithStats extends DBProject {
   blocksCount: number
@@ -164,6 +165,28 @@ class ProjectService {
       console.log('Creating default software blocks for project:', projectId, defaultBlocks)
     }
     // Add more templates as needed
+  }
+
+  // New comprehensive template initialization
+  async initializeProjectFromTemplate(projectId: string, template: ProjectTemplate): Promise<{ error: string | null }> {
+    try {
+      console.log(`Initializing project ${projectId} with template: ${template.name}`)
+      console.log(`Creating ${template.blocks.length} blocks:`)
+      
+      // Log each block for debugging
+      template.blocks.forEach((block, index) => {
+        console.log(`  ${index + 1}. [${block.lane.toUpperCase()}] ${block.title} (${block.priority} priority, ${block.effort} effort)`)
+      })
+
+      // In production, this would create actual blocks in the database
+      // For now, we simulate the initialization
+      await new Promise(resolve => setTimeout(resolve, 1000))
+
+      return { error: null }
+    } catch (error) {
+      console.error('Error initializing project from template:', error)
+      return { error: error instanceof Error ? error.message : 'Failed to initialize project template' }
+    }
   }
 }
 

@@ -20,9 +20,15 @@ import {
 } from 'lucide-react'
 import { InteractiveVerticalBoard } from '@/components/boards/InteractiveVerticalBoard'
 import { CreateProjectModal } from '@/components/modals/CreateProjectModal'
+import { WelcomeModal } from '@/components/onboarding/WelcomeModal'
+import { InteractiveTour } from '@/components/onboarding/InteractiveTour'
+import { AITestComponent } from '@/components/test/AITestComponent'
+import { KeyboardShortcuts, useKeyboardShortcuts } from '@/components/accessibility/KeyboardShortcuts'
+import { useAccessibility } from '@/contexts/AccessibilityContext'
 import { Button, Badge, Card, CardContent, CardHeader } from '@/components/ui'
 import { LightningBolt } from '@/components/ui/LightningLogo'
 import { projectService, type ProjectWithStats } from '@/lib/services/projectService'
+import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/utils'
 
 type Project = ProjectWithStats & {
@@ -41,17 +47,23 @@ interface DashboardStats {
 export function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { dbUser } = useAuth()
+  const { announceToScreenReader, toggleHighContrast, highContrastMode } = useAccessibility()
+  const { showShortcuts, closeShortcuts } = useKeyboardShortcuts()
+  
   const [selectedProject, setSelectedProject] = useState<string | null>(
     searchParams.get('project') || null
   )
   const [searchQuery, setSearchQuery] = useState('')
   const [showProjectSelector, setShowProjectSelector] = useState(false)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  const [showTour, setShowTour] = useState(false)
   const [viewMode, setViewMode] = useState<'board' | 'overview'>('board')
   const [projects, setProjects] = useState<Project[]>([])
   const [projectsLoading, setProjectsLoading] = useState(true)
 
-  // Load projects on mount
+  // Load projects on mount and check for first-time user
   useEffect(() => {
     const loadProjects = async () => {
       setProjectsLoading(true)
@@ -64,13 +76,23 @@ export function Dashboard() {
           color: (['pink', 'cyan', 'purple', 'yellow', 'green'] as const)[index % 5]
         }))
         setProjects(projectsWithColors)
+        
+        // Show welcome modal for new users (no projects yet)
+        if (projectsWithColors.length === 0 && dbUser) {
+          const hasSeenWelcome = localStorage.getItem(`hasSeenWelcome_${dbUser.id}`)
+          if (!hasSeenWelcome) {
+            setShowWelcomeModal(true)
+          }
+        }
       }
       
       setProjectsLoading(false)
     }
 
-    loadProjects()
-  }, [])
+    if (dbUser) {
+      loadProjects()
+    }
+  }, [dbUser])
 
   // Dashboard stats
   const stats: DashboardStats = {
@@ -85,10 +107,15 @@ export function Dashboard() {
   const currentProject = projects.find(p => p.id === selectedProject)
 
   const handleProjectSelect = useCallback((projectId: string) => {
+    const project = projects.find(p => p.id === projectId)
     setSelectedProject(projectId)
     setSearchParams({ project: projectId })
     setShowProjectSelector(false)
-  }, [setSearchParams])
+    
+    if (project) {
+      announceToScreenReader(`Selected project: ${project.name}`)
+    }
+  }, [setSearchParams, projects, announceToScreenReader])
 
   const handleCreateProject = useCallback(() => {
     setShowCreateModal(true)
@@ -109,6 +136,33 @@ export function Dashboard() {
     }
     loadProjects()
   }, [handleProjectSelect])
+
+  const handleWelcomeComplete = useCallback(() => {
+    setShowWelcomeModal(false)
+    if (dbUser) {
+      localStorage.setItem(`hasSeenWelcome_${dbUser.id}`, 'true')
+    }
+  }, [dbUser])
+
+  const handleStartTour = useCallback(() => {
+    setShowWelcomeModal(false)
+    setShowTour(true)
+    if (dbUser) {
+      localStorage.setItem(`hasSeenWelcome_${dbUser.id}`, 'true')
+    }
+  }, [dbUser])
+
+  const handleTourComplete = useCallback(() => {
+    setShowTour(false)
+  }, [])  
+
+  const handleCreateFirstProject = useCallback(() => {
+    setShowWelcomeModal(false)
+    setShowCreateModal(true)
+    if (dbUser) {
+      localStorage.setItem(`hasSeenWelcome_${dbUser.id}`, 'true')
+    }
+  }, [dbUser])
 
   const getStatusColor = (status: Project['status']) => {
     switch (status) {
@@ -137,8 +191,18 @@ export function Dashboard() {
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-gray-50">
+      {/* Skip Links */}
+      <div className="skip-links">
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
+        <a href="#project-selector" className="skip-link">
+          Skip to project selector
+        </a>
+      </div>
+      
       {/* Header */}
-      <div className="border-b border-border bg-white/80 backdrop-blur-sm">
+      <header className="border-b border-border bg-white/80 backdrop-blur-sm" role="banner">
         <div className="px-6 py-4">
           <div className="flex items-center justify-between">
             {/* Left side - Logo and Project Selector */}
@@ -153,11 +217,14 @@ export function Dashboard() {
               </div>
 
               {/* Project Selector */}
-              <div className="relative">
+              <div className="relative" data-tour="project-selector" id="project-selector">
                 <Button
                   variant="outline"
                   onClick={() => setShowProjectSelector(!showProjectSelector)}
                   className="flex items-center gap-2 min-w-[200px] justify-between"
+                  aria-label="Select project"
+                  aria-expanded={showProjectSelector}
+                  aria-haspopup="listbox"
                 >
                   <div className="flex items-center gap-2">
                     <div className={cn("w-3 h-3 rounded-full", currentProject && getProjectGradient(currentProject.color))} />
@@ -240,7 +307,7 @@ export function Dashboard() {
             {/* Right side - Stats and Actions */}
             <div className="flex items-center gap-4">
               {/* Quick Stats */}
-              <div className="hidden lg:flex items-center gap-6 text-sm">
+              <div className="hidden lg:flex items-center gap-6 text-sm" data-tour="stats-bar">
                 <div className="flex items-center gap-2">
                   <Activity className="w-4 h-4 text-green-600" />
                   <span className="font-medium">{stats.activeBlocks}</span>
@@ -260,59 +327,88 @@ export function Dashboard() {
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm">
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={toggleHighContrast}
+                  aria-label={`${highContrastMode ? 'Disable' : 'Enable'} high contrast mode`}
+                  title={`${highContrastMode ? 'Disable' : 'Enable'} high contrast mode`}
+                >
+                  <Target className={cn("w-4 h-4", highContrastMode && "text-black")} />
+                </Button>
+                <Button variant="ghost" size="sm" aria-label="Notifications">
                   <Bell className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" aria-label="Settings">
                   <Settings className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" aria-label="User profile">
                   <User className="w-4 h-4" />
                 </Button>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
+      <main 
+        className="flex-1 overflow-hidden" 
+        data-tour="swim-lanes" 
+        id="main-content"
+        role="main"
+        aria-label="Project dashboard content"
+      >
         {selectedProject ? (
-          <InteractiveVerticalBoard 
-            projectId={selectedProject}
-            blocks={[]} // Will be loaded by the component
-            onBlockCreate={() => {}}
-            onBlockUpdate={() => {}}
-            onBlockDelete={() => {}}
-            onBlockMove={() => {}}
-          />
+          <div className="h-full flex flex-col">
+            <div className="p-6 border-b border-border">
+              <AITestComponent />
+            </div>
+            <div className="flex-1">
+              <InteractiveVerticalBoard 
+                projectId={selectedProject}
+                blocks={[]} // Will be loaded by the component
+                onBlockCreate={() => {}}
+                onBlockUpdate={() => {}}
+                onBlockDelete={() => {}}
+                onBlockMove={() => {}}
+              />
+            </div>
+          </div>
         ) : (
           <div className="h-full flex items-center justify-center">
-            <div className="text-center max-w-md">
-              <div className="w-16 h-16 mx-auto mb-6 bg-gradient-to-br from-pink-500 via-yellow-500 to-cyan-500 rounded-2xl flex items-center justify-center">
-                <Folder className="w-8 h-8 text-white" />
+            <div className="text-center max-w-md space-y-8">
+              <div>
+                <div className="w-16 h-16 mx-auto mb-6 bg-gradient-to-br from-pink-500 via-yellow-500 to-cyan-500 rounded-2xl flex items-center justify-center">
+                  <Folder className="w-8 h-8 text-white" />
+                </div>
+                <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-pink-500 via-yellow-500 to-cyan-500 bg-clip-text text-transparent">
+                  Welcome to Frizy
+                </h2>
+                <p className="text-muted-foreground mb-8">
+                  Select a project to start managing your work with AI-powered swim lanes, 
+                  or create a new project to get started.
+                </p>
+                <Button
+                  onClick={handleCreateProject}
+                  className="bg-gradient-to-r from-pink-500 via-yellow-500 to-cyan-500 text-white hover:opacity-90"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Your First Project
+                </Button>
               </div>
-              <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-pink-500 via-yellow-500 to-cyan-500 bg-clip-text text-transparent">
-                Welcome to Frizy
-              </h2>
-              <p className="text-muted-foreground mb-8">
-                Select a project to start managing your work with AI-powered swim lanes, 
-                or create a new project to get started.
-              </p>
-              <Button
-                onClick={handleCreateProject}
-                className="bg-gradient-to-r from-pink-500 via-yellow-500 to-cyan-500 text-white hover:opacity-90"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Create Your First Project
-              </Button>
+              
+              <div className="pt-8 border-t border-border">
+                <h3 className="text-lg font-semibold mb-4">Test AI Features</h3>
+                <AITestComponent />
+              </div>
             </div>
           </div>
         )}
-      </div>
+      </main>
 
       {/* Status Bar */}
-      <div className="border-t border-border bg-white/80 backdrop-blur-sm px-6 py-2">
+      <div className="border-t border-border bg-white/80 backdrop-blur-sm px-6 py-2" data-tour="status-bar">
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <div className="flex items-center gap-6">
             {currentProject && (
@@ -338,6 +434,31 @@ export function Dashboard() {
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onProjectCreated={handleProjectCreated}
+      />
+
+      {/* Welcome Modal */}
+      <WelcomeModal
+        isOpen={showWelcomeModal}
+        onClose={handleWelcomeComplete}
+        onStartTour={handleStartTour}
+        onCreateFirstProject={handleCreateFirstProject}
+      />
+
+      {/* Interactive Tour */}
+      <InteractiveTour
+        isActive={showTour}
+        onComplete={handleTourComplete}
+        onTriggerAIImport={() => {
+          // This would trigger the AI import modal
+          // For now, we'll just show a message
+          console.log('AI Import triggered from tour')
+        }}
+      />
+
+      {/* Keyboard Shortcuts Modal */}
+      <KeyboardShortcuts
+        isOpen={showShortcuts}
+        onClose={closeShortcuts}
       />
     </div>
   )

@@ -14,7 +14,16 @@
       "Bash(gh repo create:*)",
       "Bash(git push:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(npm run test:integration:*)",
+      "Bash(npm run migrate:*)",
+      "Bash(tsx:*)",
+      "Bash(npx tsx:*)",
+      "Bash(node:*)",
+      "Bash(psql:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm run:*)"
     ],
     "deny": [],
     "ask": []

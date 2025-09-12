@@ -56,8 +56,17 @@ export function SignupForm({ onSuccess, redirectTo }: SignupFormProps) {
     // Password validation
     if (!formData.password) {
       newErrors.password = 'Password is required'
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters'
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters'
+    } else {
+      // Password strength validation
+      const hasUpperCase = /[A-Z]/.test(formData.password)
+      const hasLowerCase = /[a-z]/.test(formData.password)
+      const hasNumbers = /\d/.test(formData.password)
+      
+      if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+        newErrors.password = 'Password must contain uppercase, lowercase, and numbers'
+      }
     }
 
     // Confirm password validation
@@ -145,9 +154,11 @@ export function SignupForm({ onSuccess, redirectTo }: SignupFormProps) {
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold mb-2">Create your account</h1>
-        <p className="text-muted-foreground">
-          Join frizy.ai to start managing your projects better
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
+          Create your account
+        </h1>
+        <p className="text-muted-foreground text-lg">
+          Join Frizy to supercharge your productivity and project management
         </p>
       </div>
 
@@ -194,7 +205,7 @@ export function SignupForm({ onSuccess, redirectTo }: SignupFormProps) {
                 disabled={isSubmitting || loading}
                 icon={Lock}
                 error={errors.password}
-                helperText="Must be at least 6 characters"
+                helperText="Must be at least 8 characters with uppercase, lowercase, and numbers"
                 autoComplete="new-password"
               />
               <button

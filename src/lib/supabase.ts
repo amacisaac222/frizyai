@@ -15,7 +15,14 @@ export const supabase: SupabaseClient<Database> = createClient<Database>(
     auth: {
       autoRefreshToken: true,
       persistSession: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: true,
+      flowType: 'pkce', // Use PKCE flow for enhanced security
+      lock: true // Enable session locking
+    },
+    global: {
+      headers: {
+        'x-client-info': 'frizy-ai-frontend'
+      }
     }
   }
 )

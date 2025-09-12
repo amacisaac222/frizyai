@@ -7,15 +7,17 @@ interface AuthLayoutProps {
 
 export function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-orange-100/50 flex flex-col">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex flex-col">
       {/* Header */}
       <header className="p-6">
         <div className="max-w-6xl mx-auto">
-          <Link to="/" className="flex items-center gap-2 text-xl font-bold text-primary">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white text-sm font-bold">
+          <Link to="/" className="flex items-center gap-3 text-2xl font-bold text-primary">
+            <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-pink-600 rounded-xl flex items-center justify-center text-white text-lg font-bold shadow-lg">
               F
             </div>
-            frizy.ai
+            <span className="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+              frizy.ai
+            </span>
           </Link>
         </div>
       </header>

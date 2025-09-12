@@ -54,19 +54,12 @@ export function LoginForm({ onSuccess, redirectTo }: LoginFormProps) {
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="text-center mb-8">
-        <h1 className="text-2xl font-bold mb-2">Welcome back</h1>
-        <p className="text-muted-foreground mb-4">
-          Sign in to your Frizy account to continue
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
+          Welcome back
+        </h1>
+        <p className="text-muted-foreground text-lg">
+          Sign in to your Frizy account to continue your productivity journey
         </p>
-        
-        {/* Demo credentials hint */}
-        <div className="p-3 bg-gradient-to-r from-pink-50 via-yellow-50 to-cyan-50 border border-pink-200 rounded-lg text-sm">
-          <p className="font-medium text-gray-800 mb-1">Demo Account</p>
-          <p className="text-gray-600">
-            <strong>Email:</strong> demo@frizy.ai<br />
-            <strong>Password:</strong> demo
-          </p>
-        </div>
       </div>
 
       <Card>

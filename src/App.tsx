@@ -13,11 +13,13 @@ import { Profile } from './pages/auth/Profile'
 import { Layout } from './components/Layout'
 import { RequireAuth } from './components/auth'
 import { AuthProvider } from './contexts/AuthContext'
+import { AccessibilityProvider } from './contexts/AccessibilityContext'
 
 function App() {
   return (
     <AuthProvider>
-      <Routes>
+      <AccessibilityProvider>
+        <Routes>
         {/* Public routes */}
         <Route path="/auth/login" element={<Login />} />
         <Route path="/auth/signup" element={<Signup />} />
@@ -45,7 +47,8 @@ function App() {
             } />
           </Routes>
         } />
-      </Routes>
+        </Routes>
+      </AccessibilityProvider>
     </AuthProvider>
   )
 }

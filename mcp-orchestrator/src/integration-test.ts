@@ -25,21 +25,43 @@ async function runIntegrationTest() {
   }
   console.log('✅ Database connected successfully\n');
 
-  // Create test project
-  console.log('2️⃣ Creating test project...');
-  const projectId = uuidv4();
-  const projectEvent = await db.createEvent({
-    project_id: projectId,
-    type: 'project.created',
-    payload: {
-      id: projectId,
-      name: 'Test Project',
-      description: 'Integration test project for Frizy MCP',
-      owner_id: uuidv4(),
-      metadata: { test: true }
+  // Get or create test project
+  console.log('2️⃣ Getting/creating test project...');
+  
+  // Check if we have any existing projects
+  let projectId: string;
+  let userId: string;
+  
+  try {
+    // Get an existing user
+    const existingUsers = await db.query('SELECT id FROM users LIMIT 1');
+    if (existingUsers.rows.length > 0) {
+      userId = existingUsers.rows[0].id;
+      console.log(`✅ Using existing user: ${userId}`);
+    } else {
+      console.error('❌ No users found in database. Please create a user first.');
+      process.exit(1);
     }
-  });
-  console.log(`✅ Created project event: ${projectEvent.id}\n`);
+
+    // Get or create a project
+    const existingProjects = await db.query('SELECT id FROM projects LIMIT 1');
+    if (existingProjects.rows.length > 0) {
+      projectId = existingProjects.rows[0].id;
+      console.log(`✅ Using existing project: ${projectId}`);
+    } else {
+      // Create a new project using the existing user
+      const newProject = await db.query(`
+        INSERT INTO projects (id, name, description, created_by, status, created_at, updated_at)
+        VALUES (gen_random_uuid()::text, $1, $2, $3, 'active', NOW(), NOW())
+        RETURNING id
+      `, ['Integration Test Project', 'Test project for MCP integration', userId]);
+      projectId = newProject.rows[0].id;
+      console.log(`✅ Created new project: ${projectId}`);
+    }
+  } catch (error) {
+    console.error('Failed to get/create project:', error);
+    process.exit(1);
+  }
 
   // Start event consumer
   console.log('3️⃣ Starting event consumer...');
@@ -59,7 +81,8 @@ async function runIntegrationTest() {
     { title: 'Implement backend API', lane: 'current', priority: 'urgent' },
     { title: 'Write documentation', lane: 'context', priority: 'low' }
   ]) {
-    const blockId = uuidv4();
+    // Generate TEXT ID instead of UUID
+    const blockId = `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     blockIds.push(blockId);
     
     await db.createEvent({
@@ -115,7 +138,7 @@ async function runIntegrationTest() {
       project_id: projectId,
       type: 'context.captured',
       payload: {
-        id: uuidv4(),
+        id: `context_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         ...contextData,
         source: 'integration-test'
       }
