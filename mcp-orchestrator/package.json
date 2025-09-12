@@ -8,11 +8,14 @@
     "build": "tsc",
     "dev": "tsx watch src/index.ts api",
     "dev:mcp": "tsx watch src/index.ts mcp",
+    "dev:consumer": "tsx watch src/consumer.ts",
     "start": "node dist/index.js api",
     "start:mcp": "node dist/index.js mcp",
     "start:api": "node dist/index.js api",
+    "start:consumer": "node dist/consumer.js",
     "test": "vitest",
-    "test:watch": "vitest --watch"
+    "test:watch": "vitest --watch",
+    "test:integration": "tsx src/integration-test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.5.0",

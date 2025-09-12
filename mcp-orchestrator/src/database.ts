@@ -17,6 +17,11 @@ export class Database {
     await this.pool.end();
   }
 
+  // Generic query method for event consumer
+  async query(text: string, params?: any[]): Promise<any> {
+    return this.pool.query(text, params);
+  }
+
   // Event operations
   async createEvent(event: Omit<Event, 'id' | 'created_at'>): Promise<Event> {
     const query = `
