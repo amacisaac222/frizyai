@@ -12,7 +12,13 @@ export const EventTypeSchema = z.enum([
   'session.started',
   'session.ended',
   'github.pr.opened',
+  'github.pr.closed',
   'github.pr.merged',
+  'github.pr.commented',
+  'github.issue.opened',
+  'github.issue.closed',
+  'github.issue.reopened',
+  'github.release.published',
   'github.commit.pushed',
   'project.created',
   'project.updated'

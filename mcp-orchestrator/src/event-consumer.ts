@@ -143,7 +143,13 @@ export class EventConsumer {
         break;
         
       case 'github.pr.opened':
+      case 'github.pr.closed':
       case 'github.pr.merged':
+      case 'github.pr.commented':
+      case 'github.issue.opened':
+      case 'github.issue.closed':
+      case 'github.issue.reopened':
+      case 'github.release.published':
       case 'github.commit.pushed':
         await this.handleGitHubEvent(event);
         break;
