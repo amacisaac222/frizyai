@@ -1,14 +1,17 @@
 import OpenAI from 'openai';
 import { Database } from './database.js';
+import { EmbeddingService } from './embedding-service.js';
 import { ContextPreview, ContextPreviewItem } from './types.js';
 
 export class ContextService {
   private db: Database;
   private openai: OpenAI | null = null;
+  private embeddingService: EmbeddingService;
   private embeddingsCache = new Map<string, number[]>();
 
   constructor(database: Database) {
     this.db = database;
+    this.embeddingService = new EmbeddingService(database);
     if (process.env.OPENAI_API_KEY) {
       this.openai = new OpenAI({
         apiKey: process.env.OPENAI_API_KEY
@@ -47,14 +50,18 @@ export class ContextService {
 
     // If we have a user query, use semantic search when available
     let semanticBoosts = new Map<string, number>();
-    if (userQuery && this.openai) {
+    if (userQuery) {
       try {
-        const queryEmbedding = await this.generateEmbedding(userQuery);
-        const semanticResults = await this.db.searchContextByEmbedding(projectId, queryEmbedding, 50);
+        const semanticResults = await this.embeddingService.searchSemantic(projectId, userQuery, {
+          limit: 50,
+          threshold: 0.6,
+          includeBlocks: true,
+          includeContext: true
+        });
         
         // Create semantic relevance boost map
         semanticResults.forEach((result: any, index: number) => {
-          const boost = Math.max(0, 0.5 - (result.distance / 2)); // Convert distance to boost
+          const boost = Math.max(0, result.similarity - 0.5); // Use similarity score as boost
           semanticBoosts.set(result.id, boost);
         });
       } catch (error) {

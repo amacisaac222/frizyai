@@ -10,11 +10,13 @@
     "dev:mcp": "tsx watch src/index.ts mcp",
     "dev:consumer": "tsx watch src/consumer.ts",
     "dev:graphql": "tsx watch src/graphql-standalone.ts",
+    "dev:embeddings": "tsx watch src/embedding-processor.ts",
     "start": "node dist/index.js api",
     "start:mcp": "node dist/index.js mcp",
     "start:api": "node dist/index.js api",
     "start:consumer": "node dist/consumer.js",
     "start:graphql": "node dist/graphql-standalone.js",
+    "start:embeddings": "node dist/embedding-processor.js",
     "test": "vitest",
     "test:watch": "vitest --watch",
     "test:integration": "tsx src/integration-test.ts"
