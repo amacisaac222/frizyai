@@ -40,6 +40,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null)
   const [dbUser, setDbUser] = useState<DBUser | null>(null)
   const [loading, setLoading] = useState(true)
+  
+  // Check if we're in demo mode
+  const isDemoMode = import.meta.env.VITE_DEV_MODE === 'true'
 
   // Load user profile from database
   const loadUserProfile = async (authUser: User) => {
@@ -60,6 +63,32 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Get initial session
     const initializeAuth = async () => {
       try {
+        // In demo mode, create a mock user
+        if (isDemoMode) {
+          const demoUser = {
+            id: 'demo-user-id',
+            email: 'demo@frizy.ai',
+            user_metadata: {
+              full_name: 'Demo User'
+            },
+            app_metadata: {},
+            aud: 'authenticated',
+            created_at: new Date().toISOString()
+          } as unknown as User
+          
+          setUser(demoUser)
+          setDbUser({
+            id: 'demo-user-id',
+            email: 'demo@frizy.ai',
+            full_name: 'Demo User',
+            avatar_url: null,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          } as DBUser)
+          setLoading(false)
+          return
+        }
+        
         const { data: { session }, error } = await supabase.auth.getSession()
         
         if (error) {
@@ -77,6 +106,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     initializeAuth()
+
+    // Skip auth state listener in demo mode
+    if (isDemoMode) {
+      return
+    }
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -99,12 +133,38 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [])
+  }, [isDemoMode])
 
   // Sign in method
   const handleSignIn = async (email: string, password: string) => {
     try {
       setLoading(true)
+      
+      // In demo mode, accept any credentials
+      if (isDemoMode) {
+        const demoUser = {
+          id: 'demo-user-id',
+          email: email || 'demo@frizy.ai',
+          user_metadata: {
+            full_name: 'Demo User'
+          },
+          app_metadata: {},
+          aud: 'authenticated',
+          created_at: new Date().toISOString()
+        } as unknown as User
+        
+        setUser(demoUser)
+        setDbUser({
+          id: 'demo-user-id',
+          email: email || 'demo@frizy.ai',
+          full_name: 'Demo User',
+          avatar_url: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as DBUser)
+        setLoading(false)
+        return { error: null }
+      }
       
       // Input validation
       if (!email || !email.includes('@')) {

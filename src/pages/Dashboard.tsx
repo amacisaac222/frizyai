@@ -25,6 +25,7 @@ import { InteractiveTour } from '@/components/onboarding/InteractiveTour'
 import { AITestComponent } from '@/components/test/AITestComponent'
 import { KeyboardShortcuts, useKeyboardShortcuts } from '@/components/accessibility/KeyboardShortcuts'
 import { useAccessibility } from '@/contexts/AccessibilityContext'
+import { ContextDashboard } from '@/components/context/ContextDashboard'
 import { Button, Badge, Card, CardContent, CardHeader } from '@/components/ui'
 import { LightningBolt } from '@/components/ui/LightningLogo'
 import { projectService, type ProjectWithStats } from '@/lib/services/projectService'
@@ -59,7 +60,7 @@ export function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [showTour, setShowTour] = useState(false)
-  const [viewMode, setViewMode] = useState<'board' | 'overview'>('board')
+  const [viewMode, setViewMode] = useState<'context' | 'board' | 'overview'>('context')
   const [projects, setProjects] = useState<Project[]>([])
   const [projectsLoading, setProjectsLoading] = useState(true)
 
@@ -353,47 +354,88 @@ export function Dashboard() {
       {/* Main Content */}
       <main 
         className="flex-1 overflow-hidden" 
-        data-tour="swim-lanes" 
+        data-tour="main-content" 
         id="main-content"
         role="main"
         aria-label="Project dashboard content"
       >
         {selectedProject ? (
           <div className="h-full flex flex-col">
-            <div className="p-6 border-b border-border">
-              <AITestComponent />
+            {/* View Mode Toggle Bar */}
+            <div className="p-4 border-b border-border bg-gray-50/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex bg-white rounded-lg border border-gray-200 p-1">
+                    <button
+                      onClick={() => setViewMode('context')}
+                      className={cn(
+                        "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                        viewMode === 'context' 
+                          ? "bg-purple-600 text-white shadow-sm" 
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                      )}
+                    >
+                      Context Graph
+                    </button>
+                    <button
+                      onClick={() => setViewMode('board')}
+                      className={cn(
+                        "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                        viewMode === 'board' 
+                          ? "bg-purple-600 text-white shadow-sm" 
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                      )}
+                    >
+                      Board View
+                    </button>
+                  </div>
+                  <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                    {currentProject?.name || 'Current Project'}
+                  </Badge>
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <AITestComponent />
+                </div>
+              </div>
             </div>
+
+            {/* Dynamic Content Based on View Mode */}
             <div className="flex-1">
-              <InteractiveVerticalBoard 
-                projectId={selectedProject}
-                blocks={[]} // Will be loaded by the component
-                onBlockCreate={() => {}}
-                onBlockUpdate={() => {}}
-                onBlockDelete={() => {}}
-                onBlockMove={() => {}}
-              />
+              {viewMode === 'context' ? (
+                <ContextDashboard />
+              ) : (
+                <InteractiveVerticalBoard 
+                  projectId={selectedProject}
+                  blocks={[]} // Will be loaded by the component
+                  onBlockCreate={() => {}}
+                  onBlockUpdate={() => {}}
+                  onBlockDelete={() => {}}
+                  onBlockMove={() => {}}
+                />
+              )}
             </div>
           </div>
         ) : (
           <div className="h-full flex items-center justify-center">
             <div className="text-center max-w-md space-y-8">
               <div>
-                <div className="w-16 h-16 mx-auto mb-6 bg-gradient-to-br from-pink-500 via-yellow-500 to-cyan-500 rounded-2xl flex items-center justify-center">
-                  <Folder className="w-8 h-8 text-white" />
+                <div className="w-16 h-16 mx-auto mb-6 bg-gradient-to-br from-purple-500 via-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center">
+                  <Brain className="w-8 h-8 text-white" />
                 </div>
-                <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-pink-500 via-yellow-500 to-cyan-500 bg-clip-text text-transparent">
-                  Welcome to Frizy
+                <h2 className="text-2xl font-bold mb-4 bg-gradient-to-r from-purple-600 via-blue-600 to-cyan-600 bg-clip-text text-transparent">
+                  Your Project's Memory
                 </h2>
                 <p className="text-muted-foreground mb-8">
-                  Select a project to start managing your work with AI-powered swim lanes, 
-                  or create a new project to get started.
+                  Frizy captures context automatically - decisions, conversations, and code changes - 
+                  so Claude always knows what you're working on and why.
                 </p>
                 <Button
                   onClick={handleCreateProject}
-                  className="bg-gradient-to-r from-pink-500 via-yellow-500 to-cyan-500 text-white hover:opacity-90"
+                  className="bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
                 >
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create Your First Project
+                  <Brain className="w-4 h-4 mr-2" />
+                  Create Your First Context Graph
                 </Button>
               </div>
               
