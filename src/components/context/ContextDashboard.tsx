@@ -307,17 +307,116 @@ export function ContextDashboard() {
         )}
 
         {viewMode === 'graph' && (
-          <div className="h-full flex items-center justify-center">
-            <Card className="p-8 text-center">
-              <Network className="w-16 h-16 mx-auto mb-4 text-purple-600" />
-              <h3 className="text-xl font-semibold mb-2">Interactive Graph View</h3>
-              <p className="text-gray-600 mb-4">
-                Visual graph explorer coming soon with D3.js/vis.js integration
-              </p>
-              <p className="text-sm text-gray-500">
-                Will show nodes, edges, and semantic clusters
-              </p>
-            </Card>
+          <div className="h-full p-4">
+            <div className="h-full bg-gray-50 rounded-lg border relative overflow-hidden">
+              {/* Simple Graph Visualization */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <svg width="800" height="500" className="border rounded">
+                  {/* Background grid */}
+                  <defs>
+                    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f0f0f0" strokeWidth="0.5"/>
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill="url(#grid)" />
+                  
+                  {/* Edges (connections) */}
+                  <g>
+                    <line x1="200" y1="150" x2="400" y2="150" stroke="#6b7280" strokeWidth="2" strokeDasharray="5,5" />
+                    <line x1="400" y1="150" x2="600" y2="150" stroke="#6b7280" strokeWidth="2" />
+                    <line x1="400" y1="150" x2="400" y2="300" stroke="#6b7280" strokeWidth="2" />
+                    <line x1="200" y1="150" x2="300" y2="300" stroke="#6b7280" strokeWidth="2" strokeDasharray="3,3" />
+                  </g>
+                  
+                  {/* Nodes */}
+                  <g>
+                    {/* Block node (blue) */}
+                    <circle cx="400" cy="150" r="30" fill="#3b82f6" stroke="#1e40af" strokeWidth="3" />
+                    <text x="400" y="155" textAnchor="middle" fill="white" fontSize="12" fontWeight="bold">Block</text>
+                    
+                    {/* Decision node (green) */}
+                    <circle cx="600" cy="150" r="25" fill="#22c55e" stroke="#15803d" strokeWidth="3" />
+                    <text x="600" y="155" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">Decision</text>
+                    
+                    {/* Context node (orange) */}
+                    <circle cx="200" cy="150" r="25" fill="#f59e0b" stroke="#d97706" strokeWidth="3" />
+                    <text x="200" y="155" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">Context</text>
+                    
+                    {/* Event node (gray) */}
+                    <circle cx="400" cy="300" r="25" fill="#6b7280" stroke="#374151" strokeWidth="3" />
+                    <text x="400" y="305" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold">Event</text>
+                    
+                    {/* Related context */}
+                    <circle cx="300" cy="300" r="20" fill="#f59e0b" stroke="#d97706" strokeWidth="2" />
+                    <text x="300" y="305" textAnchor="middle" fill="white" fontSize="9">Docs</text>
+                  </g>
+                  
+                  {/* Labels */}
+                  <g>
+                    <text x="400" y="120" textAnchor="middle" fontSize="14" fontWeight="bold" fill="#374151">
+                      MCP Server Implementation
+                    </text>
+                    <text x="600" y="120" textAnchor="middle" fontSize="12" fill="#374151">
+                      Use TypeScript
+                    </text>
+                    <text x="200" y="120" textAnchor="middle" fontSize="12" fill="#374151">
+                      Claude Discussion
+                    </text>
+                    <text x="400" y="340" textAnchor="middle" fontSize="12" fill="#374151">
+                      PR #234
+                    </text>
+                    <text x="300" y="340" textAnchor="middle" fontSize="11" fill="#374151">
+                      MCP Docs
+                    </text>
+                  </g>
+                  
+                  {/* Legend */}
+                  <g transform="translate(20, 20)">
+                    <rect x="0" y="0" width="150" height="120" fill="white" stroke="#e5e7eb" rx="5" />
+                    <text x="10" y="20" fontSize="12" fontWeight="bold" fill="#374151">Node Types</text>
+                    
+                    <circle cx="25" cy="35" r="8" fill="#3b82f6" />
+                    <text x="40" y="40" fontSize="11" fill="#374151">Work Blocks</text>
+                    
+                    <circle cx="25" cy="50" r="8" fill="#22c55e" />
+                    <text x="40" y="55" fontSize="11" fill="#374151">Decisions</text>
+                    
+                    <circle cx="25" cy="65" r="8" fill="#f59e0b" />
+                    <text x="40" y="70" fontSize="11" fill="#374151">Context</text>
+                    
+                    <circle cx="25" cy="80" r="8" fill="#6b7280" />
+                    <text x="40" y="85" fontSize="11" fill="#374151">Events</text>
+                    
+                    <line x1="10" y1="100" x2="30" y2="100" stroke="#6b7280" strokeWidth="2" />
+                    <text x="40" y="105" fontSize="11" fill="#374151">Connected</text>
+                  </g>
+                </svg>
+              </div>
+              
+              {/* Controls overlay */}
+              <div className="absolute top-4 right-4 bg-white rounded-lg border shadow-sm p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <button className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 transition-colors">
+                    <Search className="w-4 h-4" />
+                  </button>
+                  <button className="p-1.5 rounded bg-gray-100 hover:bg-gray-200 transition-colors">
+                    <Network className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="text-xs text-gray-500">
+                  <p>5 nodes</p>
+                  <p>4 edges</p>
+                </div>
+              </div>
+              
+              {/* Status bar */}
+              <div className="absolute bottom-0 left-0 right-0 bg-white border-t px-4 py-2 flex items-center justify-between text-sm text-gray-600">
+                <span>Interactive Graph Explorer (Preview)</span>
+                <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+                  Context Depth: 2
+                </Badge>
+              </div>
+            </div>
           </div>
         )}
 

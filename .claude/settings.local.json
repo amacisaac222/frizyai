@@ -24,7 +24,16 @@
       "Bash(psql:*)",
       "Bash(npm run type-check:*)",
       "Bash(npm run:*)",
-      "Bash(echo $VITE_SUPABASE_URL)"
+      "Bash(echo $VITE_SUPABASE_URL)",
+      "WebFetch(domain:langsmith.com)",
+      "Bash(npx tsc:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(sed:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist)",
+      "Bash(findstr:*)",
+      "Bash(taskkill:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

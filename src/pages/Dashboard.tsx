@@ -16,19 +16,29 @@ import {
   BarChart3,
   Calendar,
   MessageSquare,
-  Sparkles
+  Sparkles,
+  Brain,
+  Layers
 } from 'lucide-react'
 import { InteractiveVerticalBoard } from '@/components/boards/InteractiveVerticalBoard'
 import { CreateProjectModal } from '@/components/modals/CreateProjectModal'
 import { WelcomeModal } from '@/components/onboarding/WelcomeModal'
 import { InteractiveTour } from '@/components/onboarding/InteractiveTour'
-import { AITestComponent } from '@/components/test/AITestComponent'
 import { KeyboardShortcuts, useKeyboardShortcuts } from '@/components/accessibility/KeyboardShortcuts'
 import { useAccessibility } from '@/contexts/AccessibilityContext'
 import { ContextDashboard } from '@/components/context/ContextDashboard'
+import { ContextHeader } from '@/components/context/ContextHeader'
+import { AdaptiveLayout } from '@/components/context/AdaptiveLayout'
+import { DeveloperWorkspace } from '@/components/productivity/DeveloperWorkspace'
+import { EnhancedWorkspace } from '@/components/productivity/EnhancedWorkspace'
 import { Button, Badge, Card, CardContent, CardHeader } from '@/components/ui'
 import { LightningBolt } from '@/components/ui/LightningLogo'
 import { projectService, type ProjectWithStats } from '@/lib/services/projectService'
+import { useContainerStore } from '@/stores/containerStore'
+import { initializeSampleData } from '@/data/sampleContainers'
+import { sampleContainers } from '@/data/sampleNestedData'
+import { NestedContainer } from '@/components/containers/NestedContainer'
+import { WaterfallStoryView } from '@/components/context/WaterfallStoryView'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/utils'
 
@@ -60,9 +70,13 @@ export function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showWelcomeModal, setShowWelcomeModal] = useState(false)
   const [showTour, setShowTour] = useState(false)
-  const [viewMode, setViewMode] = useState<'context' | 'board' | 'overview'>('context')
+  const [viewMode, setViewMode] = useState<'nested' | 'workspace' | 'trace' | 'context' | 'board'>('nested')
   const [projects, setProjects] = useState<Project[]>([])
   const [projectsLoading, setProjectsLoading] = useState(true)
+  
+  // Container store for Context Header
+  const { containers, getFilteredContainers } = useContainerStore()
+  const [contextHeaderVisible, setContextHeaderVisible] = useState(true)
 
   // Load projects on mount and check for first-time user
   useEffect(() => {
@@ -92,6 +106,9 @@ export function Dashboard() {
 
     // Always load projects in development mode, regardless of auth state
     loadProjects()
+    
+    // Initialize sample container data if needed
+    initializeSampleData()
   }, [])
 
   // Dashboard stats
@@ -190,7 +207,7 @@ export function Dashboard() {
   }, [selectedProject, projects, handleProjectSelect])
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-gray-50">
+    <div className="min-h-screen flex flex-col bg-gradient-to-br from-gray-50 via-white to-gray-50">
       {/* Skip Links */}
       <div className="skip-links">
         <a href="#main-content" className="skip-link">
@@ -328,6 +345,16 @@ export function Dashboard() {
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
                 <Button 
+                  variant={contextHeaderVisible ? "default" : "ghost"} 
+                  size="sm"
+                  onClick={() => setContextHeaderVisible(!contextHeaderVisible)}
+                  aria-label={`${contextHeaderVisible ? 'Hide' : 'Show'} Context Header`}
+                  title="Toggle Context Header - Never lose your place"
+                  className={contextHeaderVisible ? "bg-purple-600 text-white hover:bg-purple-700" : ""}
+                >
+                  <Brain className="w-4 h-4" />
+                </Button>
+                <Button 
                   variant="ghost" 
                   size="sm"
                   onClick={toggleHighContrast}
@@ -351,25 +378,79 @@ export function Dashboard() {
         </div>
       </header>
 
+      {/* Context Header - Prominent placement */}
+      {contextHeaderVisible && selectedProject && (
+        <div className="px-6 pt-4" data-tour="context-header">
+          <ContextHeader
+            projectId={selectedProject}
+            containers={containers}
+            onContextCopy={(context) => {
+              console.log('Context copied:', context)
+              announceToScreenReader('Context copied to clipboard')
+            }}
+            onWorkResume={(containerId) => {
+              console.log('Resuming work on:', containerId)
+              announceToScreenReader(`Resumed work on container ${containerId}`)
+            }}
+          />
+        </div>
+      )}
+      
       {/* Main Content */}
       <main 
-        className="flex-1 overflow-hidden" 
+        className="flex-1" 
         data-tour="main-content" 
         id="main-content"
         role="main"
         aria-label="Project dashboard content"
       >
         {selectedProject ? (
-          <div className="h-full flex flex-col">
+          <div className="min-h-full flex flex-col">
             {/* View Mode Toggle Bar */}
             <div className="p-4 border-b border-border bg-gray-50/50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div className="flex bg-white rounded-lg border border-gray-200 p-1">
                     <button
+                      onClick={() => setViewMode('nested')}
+                      className={cn(
+                        "px-3 py-2 text-sm font-medium rounded-md transition-all",
+                        viewMode === 'nested' 
+                          ? "bg-purple-600 text-white shadow-sm" 
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Layers className="w-4 h-4" />
+                        <span>Nested</span>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setViewMode('workspace')}
+                      className={cn(
+                        "px-3 py-2 text-sm font-medium rounded-md transition-all",
+                        viewMode === 'workspace' 
+                          ? "bg-purple-600 text-white shadow-sm" 
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                      )}
+                    >
+                      Workspace
+                    </button>
+                    <button
+                      onClick={() => setViewMode('trace')}
+                      className={cn(
+                        "px-3 py-2 text-sm font-medium rounded-md transition-all",
+                        viewMode === 'trace' 
+                          ? "bg-purple-600 text-white shadow-sm" 
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                      )}
+                    >
+                      Trace View
+                    </button>
+                    <button
                       onClick={() => setViewMode('context')}
                       className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                        "px-3 py-2 text-sm font-medium rounded-md transition-all",
                         viewMode === 'context' 
                           ? "bg-purple-600 text-white shadow-sm" 
                           : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
@@ -380,7 +461,7 @@ export function Dashboard() {
                     <button
                       onClick={() => setViewMode('board')}
                       className={cn(
-                        "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                        "px-3 py-2 text-sm font-medium rounded-md transition-all",
                         viewMode === 'board' 
                           ? "bg-purple-600 text-white shadow-sm" 
                           : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
@@ -395,14 +476,24 @@ export function Dashboard() {
                 </div>
                 
                 <div className="flex items-center gap-2">
-                  <AITestComponent />
+                  {/* Action buttons can go here */}
                 </div>
               </div>
             </div>
 
             {/* Dynamic Content Based on View Mode */}
-            <div className="flex-1">
-              {viewMode === 'context' ? (
+            <div className="flex-1 overflow-auto">
+              {viewMode === 'nested' ? (
+                <div className="p-6 space-y-4">
+                  {sampleContainers.map(container => (
+                    <NestedContainer key={container.id} container={container} />
+                  ))}
+                </div>
+              ) : viewMode === 'workspace' ? (
+                <EnhancedWorkspace />
+              ) : viewMode === 'trace' ? (
+                <WaterfallStoryView />
+              ) : viewMode === 'context' ? (
                 <ContextDashboard />
               ) : (
                 <InteractiveVerticalBoard 
@@ -439,10 +530,6 @@ export function Dashboard() {
                 </Button>
               </div>
               
-              <div className="pt-8 border-t border-border">
-                <h3 className="text-lg font-semibold mb-4">Test AI Features</h3>
-                <AITestComponent />
-              </div>
             </div>
           </div>
         )}
