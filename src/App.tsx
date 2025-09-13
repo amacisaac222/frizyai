@@ -47,7 +47,10 @@ function App() {
         
         {/* Protected routes - require authentication */}
         <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
-        <Route path="/dashboard" element={<RequireAuth><UnifiedProjectDashboard /></RequireAuth>} />
+        <Route path="/dashboard" element={<RequireAuth><IDESessionDashboard /></RequireAuth>} />
+        <Route path="/projects/new" element={<RequireAuth><IDESessionDashboard /></RequireAuth>} />
+        <Route path="/projects/:projectId" element={<RequireAuth><IDESessionDashboard /></RequireAuth>} />
+        <Route path="/projects/:projectId/settings" element={<RequireAuth><IDESessionDashboard /></RequireAuth>} />
         <Route path="/dashboard-unified" element={<RequireAuth><UnifiedDashboard /></RequireAuth>} />
         <Route path="/dashboard-old" element={<RequireAuth><Dashboard /></RequireAuth>} />
         <Route path="/test-collaboration" element={<RequireAuth><CollaborativeTest /></RequireAuth>} />

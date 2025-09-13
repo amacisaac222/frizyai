@@ -1,8 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, ChevronRight, ChevronDown, Maximize2, Search, MessageSquare, BarChart, Settings, Map, Bot, Sparkles, Copy, CheckCircle } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { NaturalLanguageSearch } from '../components/search/NaturalLanguageSearch';
 import { RoadmapView } from '../components/roadmap/RoadmapView';
 import { ClaudePanel } from '../components/claude/ClaudePanel';
+import { ProjectOnboarding } from '../components/onboarding/ProjectOnboarding';
+import { ProjectSwitcher } from '../components/projects/ProjectSwitcher';
+import { supabase } from '../config/supabase';
+import { useAuth } from '../contexts/AuthContext';
 
 // Session represents a Claude conversation from start to context limit/close
 interface Session {
@@ -101,6 +106,10 @@ const colors = {
 };
 
 export function IDESessionDashboard() {
+  const { projectId } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  
   // Layout state
   const [activeTab, setActiveTab] = useState<'explorer' | 'roadmap' | 'analytics' | 'settings'>('explorer');
   const [explorerExpanded, setExplorerExpanded] = useState(true);
@@ -119,14 +128,115 @@ export function IDESessionDashboard() {
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['active-session']));
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Project state
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(projectId || null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [hasProjects, setHasProjects] = useState<boolean | null>(null);
+  
   // Constants for pagination
   const SESSIONS_PER_PAGE = 20;
   const PAGE_SIZE = 20;
   
-  // Initialize with sample sessions
+  // Check for projects and load data
   useEffect(() => {
-    loadSampleSessions();
-  }, []);
+    if (user) {
+      checkUserProjects();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (currentProjectId) {
+      loadProjectSessions(currentProjectId);
+    } else if (hasProjects === false) {
+      loadSampleSessions();
+    }
+  }, [currentProjectId, hasProjects]);
+
+  const checkUserProjects = async () => {
+    if (!user) return;
+    
+    try {
+      const { data: projects, error } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1);
+
+      if (error) throw error;
+
+      if (projects && projects.length > 0) {
+        setHasProjects(true);
+        if (!currentProjectId) {
+          setCurrentProjectId(projects[0].id);
+          navigate(`/projects/${projects[0].id}`);
+        }
+      } else {
+        setHasProjects(false);
+        setShowOnboarding(true);
+      }
+    } catch (error) {
+      console.error('Error checking projects:', error);
+      setHasProjects(false);
+    }
+  };
+
+  const loadProjectSessions = async (projectId: string) => {
+    try {
+      const { data: sessionsData, error } = await supabase
+        .from('sessions')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+
+      // Transform database sessions to our Session interface
+      const transformedSessions = (sessionsData || []).map(s => ({
+        id: s.id,
+        startTime: s.created_at,
+        endTime: s.ended_at,
+        status: s.status || 'completed',
+        title: s.title || 'Untitled Session',
+        summary: s.summary || '',
+        metadata: s.metadata || {
+          totalEvents: 0,
+          totalBlocks: 0,
+          contextUsage: 0,
+          duration: 0
+        },
+        blocks: []
+      }));
+
+      setSessions(transformedSessions);
+      
+      // Set current session if there's an active one
+      const activeSession = transformedSessions.find(s => s.status === 'active');
+      if (activeSession) {
+        setCurrentSession(activeSession);
+      }
+    } catch (error) {
+      console.error('Error loading sessions:', error);
+      // Fall back to sample data on error
+      loadSampleSessions();
+    }
+  };
+
+  const handleProjectChange = (newProjectId: string) => {
+    setCurrentProjectId(newProjectId);
+    navigate(`/projects/${newProjectId}`);
+  };
+
+  const handleNewProject = () => {
+    setShowOnboarding(true);
+  };
+
+  const handleOnboardingComplete = (newProjectId: string) => {
+    setShowOnboarding(false);
+    setHasProjects(true);
+    setCurrentProjectId(newProjectId);
+    navigate(`/projects/${newProjectId}`);
+  };
 
   const loadSampleSessions = () => {
     const now = new Date();
@@ -489,12 +599,28 @@ export function IDESessionDashboard() {
     }
   };
 
+  // Show onboarding if needed
+  if (showOnboarding) {
+    return <ProjectOnboarding onComplete={handleOnboardingComplete} />;
+  }
+
   return (
     <div className="h-screen bg-gray-950 text-gray-100 flex flex-col">
       {/* Header */}
       <div className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-semibold">Frizy Context Memory</h1>
+          <h1 className="text-lg font-semibold">Frizy AI</h1>
+          <div className="h-6 w-px bg-gray-700" />
+          
+          {/* Project Switcher */}
+          {hasProjects && (
+            <ProjectSwitcher
+              currentProjectId={currentProjectId}
+              onProjectChange={handleProjectChange}
+              onNewProject={handleNewProject}
+            />
+          )}
+          
           <div className="h-6 w-px bg-gray-700" />
           <div className="flex items-center gap-2">
             {currentSession && currentSession.status === 'active' && (
