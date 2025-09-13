@@ -609,7 +609,14 @@ export function IDESessionDashboard() {
       {/* Header */}
       <div className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg font-semibold">Frizy AI</h1>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-pink-500 via-yellow-500 to-cyan-500 rounded-lg flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-lg font-bold bg-gradient-to-r from-pink-500 via-yellow-500 to-cyan-500 bg-clip-text text-transparent">
+              Frizy AI
+            </h1>
+          </div>
           <div className="h-6 w-px bg-gray-700" />
           
           {/* Project Switcher */}
