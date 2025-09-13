@@ -6,7 +6,7 @@ import { RoadmapView } from '../components/roadmap/RoadmapView';
 import { ClaudePanel } from '../components/claude/ClaudePanel';
 import { ProjectOnboarding } from '../components/onboarding/ProjectOnboarding';
 import { ProjectSwitcher } from '../components/projects/ProjectSwitcher';
-import { supabase } from '../config/supabase';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
 // Session represents a Claude conversation from start to context limit/close

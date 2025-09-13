@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Save, Trash2, Archive, GitBranch, Link, Shield, Bell, Database } from 'lucide-react';
-import { supabase } from '../../config/supabase';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 

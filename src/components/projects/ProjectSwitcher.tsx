@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, Plus, Settings, Check, Folder, Activity, GitBranch } from 'lucide-react';
-import { supabase } from '../../config/supabase';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface Project {

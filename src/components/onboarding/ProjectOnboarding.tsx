@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Github, Link, CheckCircle, Copy, ChevronRight, Terminal, Settings, Sparkles } from 'lucide-react';
-import { supabase } from '../../config/supabase';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface ProjectOnboardingProps {
