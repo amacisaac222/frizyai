@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, ChevronRight, ChevronDown, Maximize2, Search, MessageSquare, BarChart, Settings, Map, Bot, Sparkles, Copy, CheckCircle } from 'lucide-react';
+import { X, ChevronRight, ChevronDown, Maximize2, Search, MessageSquare, BarChart, Settings, Map, Bot, Sparkles, Copy, CheckCircle, Layers, Activity, Database, GitBranch, Clock } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { NaturalLanguageSearch } from '../components/search/NaturalLanguageSearch';
 import { RoadmapView } from '../components/roadmap/RoadmapView';
 import { ClaudePanel } from '../components/claude/ClaudePanel';
 import { ProjectOnboarding } from '../components/onboarding/ProjectOnboarding';
 import { ProjectSwitcher } from '../components/projects/ProjectSwitcher';
+import { ConnectionStatus } from '../components/ConnectionStatus';
+import { MCPSetupWizard } from '../components/MCPSetupWizard';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -132,6 +134,9 @@ export function IDESessionDashboard() {
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(projectId || null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [hasProjects, setHasProjects] = useState<boolean | null>(null);
+
+  // MCP Setup state
+  const [showMCPSetup, setShowMCPSetup] = useState(false);
   
   // Constants for pagination
   const SESSIONS_PER_PAGE = 20;
@@ -515,6 +520,15 @@ export function IDESessionDashboard() {
     return `${minutes}m ago`;
   };;
 
+  const expandPanel = (panelId: string) => {
+    // Find the panel to expand
+    const panelToExpand = panels.find(p => p.id === panelId);
+    if (panelToExpand) {
+      // Set this panel as the only panel
+      setPanels([panelToExpand]);
+    }
+  };
+
   const handleNavigateFromSearch = (type: string, id: string, metadata?: any) => {
     // Navigate to the appropriate item based on type
     if (type === 'session' && metadata?.sessionId) {
@@ -587,10 +601,25 @@ export function IDESessionDashboard() {
       case 'sessions':
         return <SessionView session={panel.data || currentSession} onBlockClick={(block) => openPanel('blocks', block)} onCompile={handleCompileToClaudePanel} />;
       case 'blocks':
+        // If no specific block is selected, show all blocks from all sessions
+        if (!panel.data) {
+          const allBlocks = sessions.flatMap(s => s.blocks);
+          return <AllBlocksView blocks={allBlocks} onBlockClick={(block) => openPanel('blocks', block)} onCompile={handleCompileToClaudePanel} />;
+        }
         return <BlockView block={panel.data} onTraceClick={(trace) => openPanel('traces', trace)} onCompile={handleCompileToClaudePanel} />;
       case 'traces':
+        // If no specific trace is selected, show all traces from all blocks
+        if (!panel.data) {
+          const allTraces = sessions.flatMap(s => s.blocks.flatMap(b => b.traces));
+          return <AllTracesView traces={allTraces} onTraceClick={(trace) => openPanel('traces', trace)} onCompile={handleCompileToClaudePanel} />;
+        }
         return <TraceView trace={panel.data} onEventClick={(event) => openPanel('events', event)} onCompile={handleCompileToClaudePanel} />;
       case 'events':
+        // If no specific event is selected, show all events
+        if (!panel.data) {
+          const allEvents = sessions.flatMap(s => s.blocks.flatMap(b => b.traces.flatMap(t => t.events)));
+          return <AllEventsView events={allEvents} onEventClick={(event) => openPanel('events', event)} />;
+        }
         return <EventView event={panel.data} />;
       case 'claude':
         return <ClaudePanel sessions={sessions} currentSession={currentSession} initialPrompt={panel.data?.initialPrompt} />;
@@ -640,6 +669,11 @@ export function IDESessionDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          {/* Connection Status */}
+          <ConnectionStatus onSetupClick={() => setShowMCPSetup(true)} />
+
+          <div className="h-6 w-px bg-gray-700" />
+
           <div className="flex items-center gap-4 text-sm text-gray-400">
             <span>{sessions.length} total sessions</span>
             <span>{sessions.reduce((acc, s) => acc + s.metadata.totalEvents, 0)} events tracked</span>
@@ -655,42 +689,83 @@ export function IDESessionDashboard() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Mini Sidebar - Activity Bar */}
-        <div className="w-12 bg-gray-900 border-r border-gray-800 flex flex-col">
+        {/* Mini Sidebar - Waterfall View */}
+        <div className="w-14 bg-gray-900 border-r border-gray-800 flex flex-col">
+          {/* Header */}
+          <div className="p-2 border-b border-gray-800">
+            <div className="text-[10px] font-semibold text-gray-400 text-center">VIEWS</div>
+          </div>
+
+          {/* Session Overview */}
           <button
-            onClick={() => setActiveTab('explorer')}
-            className={`p-3 hover:bg-gray-800 ${activeTab === 'explorer' ? 'bg-gray-800 border-l-2 border-blue-400' : ''}`}
-            title="Explorer"
+            onClick={() => openPanel('overview', null)}
+            className={`p-2 hover:bg-gray-800 group relative`}
+            title="Session Overview"
           >
-            <div className="h-5 w-5 rounded bg-gradient-to-br from-blue-400 to-blue-600" />
+            <Layers className="h-5 w-5 mx-auto text-blue-400" />
+            <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">Overview</div>
           </button>
+
+          {/* Work Blocks */}
           <button
-            onClick={() => { setActiveTab('roadmap'); setExplorerExpanded(true); }}
-            className={`p-3 hover:bg-gray-800 ${activeTab === 'roadmap' ? 'bg-gray-800 border-l-2 border-blue-400' : ''}`}
-            title="Roadmap"
+            onClick={() => openPanel('blocks', null)}
+            className={`p-2 hover:bg-gray-800 group relative`}
+            title="Work Blocks"
           >
-            <div className="h-5 w-5 rounded bg-gradient-to-br from-orange-400 to-orange-600" />
+            <GitBranch className="h-5 w-5 mx-auto text-green-400" />
+            <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">Blocks</div>
           </button>
+
+          {/* Traces */}
           <button
-            onClick={() => setSearchPanelOpen(!searchPanelOpen)}
-            className={`p-3 hover:bg-gray-800 ${searchPanelOpen ? 'bg-gray-800 border-l-2 border-purple-400' : ''}`}
-            title="Toggle Search Panel"
+            onClick={() => openPanel('traces', null)}
+            className={`p-2 hover:bg-gray-800 group relative`}
+            title="Traces - Tool Sequences"
           >
-            <div className="h-5 w-5 rounded bg-gradient-to-br from-purple-400 to-purple-600" />
+            <Activity className="h-5 w-5 mx-auto text-orange-400" />
+            <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">Traces</div>
           </button>
+
+          {/* Raw Events */}
+          <button
+            onClick={() => openPanel('events', null)}
+            className={`p-2 hover:bg-gray-800 group relative`}
+            title="Raw Events"
+          >
+            <Database className="h-5 w-5 mx-auto text-purple-400" />
+            <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">Events</div>
+          </button>
+
+          <div className="my-2 mx-2 border-t border-gray-700" />
+
+          {/* Analytics */}
           <button
             onClick={() => setActiveTab('analytics')}
-            className={`p-3 hover:bg-gray-800 ${activeTab === 'analytics' ? 'bg-gray-800 border-l-2 border-blue-400' : ''}`}
+            className={`p-2 hover:bg-gray-800 group relative ${activeTab === 'analytics' ? 'bg-gray-800 border-l-2 border-blue-400' : ''}`}
             title="Analytics"
           >
-            <div className="h-5 w-5 rounded bg-gradient-to-br from-green-400 to-green-600" />
+            <BarChart className="h-5 w-5 mx-auto text-cyan-400" />
+            <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">Stats</div>
           </button>
+
+          {/* Search */}
+          <button
+            onClick={() => setSearchPanelOpen(!searchPanelOpen)}
+            className={`p-2 hover:bg-gray-800 group relative ${searchPanelOpen ? 'bg-gray-800 border-l-2 border-purple-400' : ''}`}
+            title="Search"
+          >
+            <Search className="h-5 w-5 mx-auto text-purple-400" />
+            <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">Search</div>
+          </button>
+
+          {/* Settings */}
           <button
             onClick={() => setActiveTab('settings')}
-            className={`p-3 hover:bg-gray-800 ${activeTab === 'settings' ? 'bg-gray-800 border-l-2 border-blue-400' : ''}`}
+            className={`p-2 hover:bg-gray-800 group relative ${activeTab === 'settings' ? 'bg-gray-800 border-l-2 border-blue-400' : ''}`}
             title="Settings"
           >
-            <div className="h-5 w-5 rounded bg-gradient-to-br from-gray-400 to-gray-600" />
+            <Settings className="h-5 w-5 mx-auto text-gray-400" />
+            <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">Settings</div>
           </button>
         </div>
 
@@ -851,26 +926,36 @@ export function IDESessionDashboard() {
               onDragEnd={handleDragEnd}
             >
               {/* Panel Header */}
-              <div className="h-8 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-2 cursor-move">
-                <div className="flex items-center gap-2">
-                  <div className="flex gap-0.5">
-                    <div className="h-1 w-1 bg-gray-600 rounded-full" />
-                    <div className="h-1 w-1 bg-gray-600 rounded-full" />
+              <div className="h-8 bg-gray-900 border-b border-gray-800 flex items-center px-2">
+                {/* Left side - Panel title */}
+                <div className="flex-1 flex items-center">
+                  <span className="text-xs font-medium capitalize">{panel.type} View</span>
+                </div>
+
+                {/* Center - Drag handle (4 dots) */}
+                <div className="flex items-center justify-center cursor-move px-2">
+                  <div className="grid grid-cols-2 gap-0.5">
                     <div className="h-1 w-1 bg-gray-600 rounded-full" />
                     <div className="h-1 w-1 bg-gray-600 rounded-full" />
                     <div className="h-1 w-1 bg-gray-600 rounded-full" />
                     <div className="h-1 w-1 bg-gray-600 rounded-full" />
                   </div>
-                  <span className="text-xs font-medium capitalize">{panel.type} View</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button className="hover:bg-gray-800 p-1 rounded">
+
+                {/* Right side - Actions */}
+                <div className="flex-1 flex items-center justify-end gap-1">
+                  <button
+                    onClick={() => expandPanel(panel.id)}
+                    className="hover:bg-gray-800 p-1 rounded"
+                    title="Expand panel"
+                  >
                     <Maximize2 className="h-3 w-3" />
                   </button>
                   {panels.length > 1 && (
                     <button
                       onClick={() => closePanel(panel.id)}
                       className="hover:bg-gray-800 p-1 rounded"
+                      title="Close panel"
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -911,6 +996,18 @@ export function IDESessionDashboard() {
           </div>
         )}
       </div>
+
+      {/* MCP Setup Wizard */}
+      <MCPSetupWizard
+        isOpen={showMCPSetup}
+        onClose={() => setShowMCPSetup(false)}
+        onComplete={(config) => {
+          console.log('MCP Config saved:', config);
+          setShowMCPSetup(false);
+          // Trigger reconnection with new config
+          window.location.reload();
+        }}
+      />
     </div>
   );
 }
@@ -1211,6 +1308,229 @@ function SessionView({ session, onBlockClick, onCompile }: {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// All Blocks View - Shows all blocks from all sessions
+function AllBlocksView({ blocks, onBlockClick, onCompile }: {
+  blocks: Block[];
+  onBlockClick: (block: Block) => void;
+  onCompile?: (prompt: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const compileToPrompt = () => {
+    let prompt = `## All Work Blocks (${blocks.length} total)\n\n`;
+    blocks.forEach((block, idx) => {
+      prompt += `### ${idx + 1}. ${block.title}\n`;
+      prompt += `${block.summary}\n`;
+      prompt += `- Type: ${block.type}, Status: ${block.status}\n`;
+      prompt += `- Metrics: ${block.metrics.filesModified} files, ${block.metrics.linesChanged} lines\n`;
+      prompt += `- Traces: ${block.traces.length}\n\n`;
+    });
+    return prompt;
+  };
+
+  const handleCompile = () => {
+    const prompt = compileToPrompt();
+    if (onCompile) {
+      onCompile(prompt);
+    } else {
+      navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="p-4">
+      <div className="mb-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">All Work Blocks</h2>
+            <p className="text-sm text-gray-400 mt-1">{blocks.length} blocks across all sessions</p>
+          </div>
+          <button
+            onClick={handleCompile}
+            className="flex items-center gap-1.5 px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded text-xs transition-all"
+          >
+            {copied ? (
+              <>
+                <CheckCircle className="h-3 w-3" />
+                <span>Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                <span>Compile to Claude</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {blocks.map((block, index) => (
+          <div
+            key={block.id}
+            onClick={() => onBlockClick(block)}
+            className="bg-gray-900 rounded-lg p-4 cursor-pointer hover:bg-gray-800 transition-colors"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className={`h-2 w-2 rounded-full ${colors.block[block.type]}`} />
+                <span className="font-medium">{block.title}</span>
+              </div>
+              <span className={`text-xs px-2 py-1 rounded ${
+                block.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                block.status === 'in_progress' ? 'bg-yellow-500/20 text-yellow-400' :
+                'bg-gray-500/20 text-gray-400'
+              }`}>
+                {block.status}
+              </span>
+            </div>
+            <p className="text-sm text-gray-400 mb-3">{block.summary}</p>
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              <span>{block.metrics.filesModified} files modified</span>
+              <span>{block.metrics.linesChanged} lines changed</span>
+              <span>{block.traces.length} traces</span>
+              <span>{block.metrics.toolsUsed.length} tools used</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// All Traces View - Shows all traces from all blocks
+function AllTracesView({ traces, onTraceClick, onCompile }: {
+  traces: Trace[];
+  onTraceClick: (trace: Trace) => void;
+  onCompile?: (prompt: string) => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const compileToPrompt = () => {
+    let prompt = `## All Traces (${traces.length} total)\n\n`;
+    traces.forEach((trace, idx) => {
+      prompt += `### ${idx + 1}. ${trace.name}\n`;
+      prompt += `${trace.summary}\n`;
+      prompt += `- Type: ${trace.type}\n`;
+      prompt += `- Duration: ${trace.duration}s\n`;
+      prompt += `- Events: ${trace.events.length}\n\n`;
+    });
+    return prompt;
+  };
+
+  const handleCompile = () => {
+    const prompt = compileToPrompt();
+    if (onCompile) {
+      onCompile(prompt);
+    } else {
+      navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="p-4">
+      <div className="mb-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">All Traces</h2>
+            <p className="text-sm text-gray-400 mt-1">{traces.length} traces across all blocks</p>
+          </div>
+          <button
+            onClick={handleCompile}
+            className="flex items-center gap-1.5 px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded text-xs transition-all"
+          >
+            {copied ? (
+              <>
+                <CheckCircle className="h-3 w-3" />
+                <span>Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                <span>Compile to Claude</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {traces.map((trace, index) => (
+          <div
+            key={trace.id}
+            onClick={() => onTraceClick(trace)}
+            className="bg-gray-900 rounded-lg p-4 cursor-pointer hover:bg-gray-800 transition-colors"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className={`h-2 w-2 rounded-full ${colors.trace[trace.type]}`} />
+                <span className="font-medium">{trace.name}</span>
+              </div>
+              <span className="text-xs text-gray-500">{trace.duration}s</span>
+            </div>
+            <p className="text-sm text-gray-400 mb-3">{trace.summary}</p>
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              <span>{trace.type}</span>
+              <span>{trace.events.length} events</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// All Events View - Shows all events
+function AllEventsView({ events, onEventClick }: {
+  events: RawEvent[];
+  onEventClick: (event: RawEvent) => void;
+}) {
+  return (
+    <div className="p-4">
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold">All Events</h2>
+        <p className="text-sm text-gray-400 mt-1">{events.length} events across all traces</p>
+      </div>
+
+      <div className="space-y-2">
+        {events.map((event, index) => (
+          <div
+            key={event.id}
+            onClick={() => onEventClick(event)}
+            className="bg-gray-900 rounded p-3 cursor-pointer hover:bg-gray-800 transition-colors"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <div className={`h-2 w-2 rounded-full ${colors.event[event.type]}`} />
+                <span className="text-sm font-medium">{event.type}</span>
+                {event.tool && (
+                  <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded">
+                    {event.tool}
+                  </span>
+                )}
+              </div>
+              <span className={`text-xs px-2 py-0.5 rounded ${
+                event.impact === 'high' ? 'bg-red-500/20 text-red-400' :
+                event.impact === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                'bg-gray-500/20 text-gray-400'
+              }`}>
+                {event.impact} impact
+              </span>
+            </div>
+            <div className="text-xs text-gray-500">
+              {new Date(event.timestamp).toLocaleTimeString()}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

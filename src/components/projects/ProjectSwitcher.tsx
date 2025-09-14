@@ -47,14 +47,8 @@ export function ProjectSwitcher({ currentProjectId, onProjectChange, onNewProjec
       // Fetch projects with session stats
       const { data: projectsData, error } = await supabase
         .from('projects')
-        .select(`
-          *,
-          sessions:sessions(count),
-          last_session:sessions(
-            created_at
-          )
-        `)
-        .eq('user_id', user.id)
+        .select('*')
+        .eq('created_by', user.id)
         .order('updated_at', { ascending: false });
 
       if (error) throw error;
