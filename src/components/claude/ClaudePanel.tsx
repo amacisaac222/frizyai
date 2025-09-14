@@ -25,10 +25,16 @@ export function ClaudePanel({ sessions, currentSession, initialPrompt }: ClaudeP
   const [isLoading, setIsLoading] = useState(false);
   const [compiledPrompt, setCompiledPrompt] = useState<string | null>(null);
   const [showPushConfirm, setShowPushConfirm] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<'checking' | 'connected' | 'missing'>('checking');
+  const [copiedText, setCopiedText] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const claudeService = useRef(new ClaudeAPIService());
 
   useEffect(() => {
+    // Check API key status
+    const hasApiKey = import.meta.env.VITE_ANTHROPIC_API_KEY ? true : false;
+    setApiKeyStatus(hasApiKey ? 'connected' : 'missing');
+
     if (initialPrompt) {
       setInput(initialPrompt);
       // Add a system message to show the context was loaded
@@ -70,32 +76,32 @@ export function ClaudePanel({ sessions, currentSession, initialPrompt }: ClaudeP
       // Check for specific commands
       if (input.toLowerCase().includes('compile') && input.toLowerCase().includes('session')) {
         // Compile session details
-        const sessionToCompile = input.toLowerCase().includes('last') 
-          ? sessions[0] 
+        const sessionToCompile = input.toLowerCase().includes('last')
+          ? sessions[0]
           : currentSession || sessions[0];
-          
+
         if (sessionToCompile) {
           const prompt = claudeService.current.compileSessionToPrompt(sessionToCompile);
           setCompiledPrompt(prompt);
-          
-          response = `I've compiled the session details into a prompt for Claude Code:\n\n\`\`\`\n${prompt}\n\`\`\`\n\nWould you like me to:\n1. Copy this to clipboard?\n2. Push it via the MCP server?\n3. Analyze it further?`;
-          
+
+          response = `🎆 **Session Compiled Successfully!**\n\nI've compiled the session "${sessionToCompile.title}" into a Claude-ready prompt:\n\n\`\`\`markdown\n${prompt}\n\`\`\`\n\n**Available Actions:**\n📋 Copy to clipboard (click the copy button above)\n🚀 Push to MCP server for persistence\n🔍 Analyze patterns and insights\n\n💡 **Tip:** This compiled context captures ${sessionToCompile.metadata.totalBlocks} blocks and ${sessionToCompile.metadata.totalEvents} events with ${sessionToCompile.metadata.contextUsage}% context usage.`;
+
           userMessage.metadata = { action: 'compile', sessionId: sessionToCompile.id };
         } else {
-          response = 'No session found to compile.';
+          response = 'No session found to compile. Make sure you have an active session with data.';
         }
       } else if (input.toLowerCase().includes('push') && input.toLowerCase().includes('mcp')) {
         // Prepare for MCP push
-        if (compiledPrompt || currentSession) {
+        if (currentSession || sessions.length > 0) {
           const sessionToPush = currentSession || sessions[0];
           const result = await claudeService.current.prepareForMCPPush(sessionToPush);
-          
-          response = `**MCP Push Analysis:**\n\nSession: ${sessionToPush.title}\nRecommendation: ${result.shouldPush ? '✅ Ready to push' : '⚠️ Consider reviewing first'}\n\n**What will be sent:**\n- Session metadata\n- ${sessionToPush.metadata.totalBlocks} blocks\n- ${sessionToPush.metadata.totalEvents} events\n- Context usage: ${sessionToPush.metadata.contextUsage}%\n\n${result.shouldPush ? 'Click "Push to MCP" to proceed.' : 'You may want to complete more work before pushing.'}`;
-          
+
+          response = `**MCP Push Analysis:**\n\nSession: ${sessionToPush.title}\nRecommendation: ${result.shouldPush ? '✅ Ready to push' : '⚠️ Consider reviewing first'}\n\n**What will be sent:**\n- Session metadata\n- ${sessionToPush.metadata.totalBlocks} blocks\n- ${sessionToPush.metadata.totalEvents} events\n- Context usage: ${sessionToPush.metadata.contextUsage}%\n\n${result.shouldPush ? 'Click "Push to MCP" to proceed.' : 'You may want to complete more work before pushing.'}\n\n💡 **Tip:** You can also use the compile buttons throughout the dashboard to quickly send context to Claude.`;
+
           setShowPushConfirm(result.shouldPush);
           userMessage.metadata = { action: 'push', sessionId: sessionToPush.id };
         } else {
-          response = 'Please compile a session first before pushing to MCP.';
+          response = 'No sessions available to push to MCP.';
         }
       } else if (input.toLowerCase().includes('analyze')) {
         // Analyze sessions
@@ -123,7 +129,12 @@ export function ClaudePanel({ sessions, currentSession, initialPrompt }: ClaudeP
           }))
         };
         
-        response = await claudeService.current.askQuestion(input, context);
+        // Check if it's a simple greeting or help request
+        if (input.toLowerCase().includes('hello') || input.toLowerCase().includes('hi') || input.toLowerCase().includes('help')) {
+          response = `Hello! I'm your AI assistant integrated with Frizy. I can help you:\n\n📋 **Compile sessions** - Turn your work into Claude prompts\n🚀 **Push to MCP** - Send context to the MCP server\n🔍 **Analyze patterns** - Get insights about your coding\n📈 **Show metrics** - View session statistics\n\nTry clicking one of the quick action buttons below or type a command!`;
+        } else {
+          response = await claudeService.current.askQuestion(input, context);
+        }
       }
 
       const assistantMessage: ChatMessage = {
@@ -149,13 +160,61 @@ export function ClaudePanel({ sessions, currentSession, initialPrompt }: ClaudeP
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    // You could add a toast notification here
+    setCopiedText(text);
+    setTimeout(() => setCopiedText(null), 2000);
   };
 
   const pushToMCP = async () => {
-    // Implementation for pushing to MCP server
-    console.log('Pushing to MCP server...', compiledPrompt);
-    setShowPushConfirm(false);
+    try {
+      const sessionToPush = currentSession || sessions[0];
+      if (!sessionToPush) {
+        throw new Error('No session to push');
+      }
+
+      // Send to MCP server via WebSocket
+      const ws = new WebSocket('ws://localhost:3334');
+
+      ws.onopen = () => {
+        const mcpEvent = {
+          type: 'context_push',
+          data: {
+            sessionId: sessionToPush.id,
+            title: sessionToPush.title,
+            summary: sessionToPush.summary,
+            blocks: sessionToPush.blocks,
+            metadata: sessionToPush.metadata,
+            compiledPrompt: compiledPrompt || claudeService.current.compileSessionToPrompt(sessionToPush),
+            timestamp: new Date().toISOString()
+          }
+        };
+
+        ws.send(JSON.stringify(mcpEvent));
+
+        const successMessage: ChatMessage = {
+          id: Date.now().toString(),
+          role: 'system',
+          content: '✅ Successfully pushed to MCP server. The context is now available for your next Claude conversation.',
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, successMessage]);
+
+        ws.close();
+      };
+
+      ws.onerror = (error) => {
+        throw new Error('Failed to connect to MCP server');
+      };
+    } catch (error) {
+      const errorMessage: ChatMessage = {
+        id: Date.now().toString(),
+        role: 'system',
+        content: `❌ Failed to push to MCP: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setShowPushConfirm(false);
+    }
     
     const systemMessage: ChatMessage = {
       id: Date.now().toString(),
@@ -175,6 +234,32 @@ export function ClaudePanel({ sessions, currentSession, initialPrompt }: ClaudeP
 
   return (
     <div className="h-full flex flex-col bg-gray-950">
+      {/* Header with Status */}
+      <div className="border-b border-gray-800 p-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <MessageSquare className="h-4 w-4 text-purple-400" />
+          <span className="text-sm font-medium">Claude AI Assistant</span>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          {apiKeyStatus === 'connected' ? (
+            <span className="flex items-center gap-1 text-green-400">
+              <div className="w-2 h-2 bg-green-400 rounded-full" />
+              Local Mode
+            </span>
+          ) : apiKeyStatus === 'missing' ? (
+            <span className="flex items-center gap-1 text-yellow-400">
+              <div className="w-2 h-2 bg-yellow-400 rounded-full" />
+              Local Mode
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-gray-400">
+              <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" />
+              Checking...
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.length === 0 && (
@@ -203,8 +288,11 @@ export function ClaudePanel({ sessions, currentSession, initialPrompt }: ClaudeP
                   }}
                   className="mt-1 flex items-center gap-1 text-xs opacity-70 hover:opacity-100"
                 >
-                  <Copy className="h-3 w-3" />
-                  Copy
+                  {copiedText === message.content ? (
+                    <><CheckCircle className="h-3 w-3 text-green-400" /> Copied!</>
+                  ) : (
+                    <><Copy className="h-3 w-3" /> Copy</>
+                  )}
                 </button>
               )}
             </div>

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, ChevronRight, ChevronDown, Maximize2, Search, MessageSquare, BarChart, Settings, Map, Bot, Sparkles, Copy, CheckCircle, Layers, Activity, Database, GitBranch, Clock } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { X, ChevronRight, ChevronDown, Maximize2, Search, MessageSquare, BarChart, Settings, Map, Bot, Sparkles, Copy, CheckCircle, Layers, Activity, Database, GitBranch, Clock, HelpCircle } from 'lucide-react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { NaturalLanguageSearch } from '../components/search/NaturalLanguageSearch';
 import { RoadmapView } from '../components/roadmap/RoadmapView';
@@ -8,8 +8,21 @@ import { ProjectOnboarding } from '../components/onboarding/ProjectOnboarding';
 import { ProjectSwitcher } from '../components/projects/ProjectSwitcher';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { MCPSetupWizard } from '../components/MCPSetupWizard';
+import { AnalyticsDashboard } from '../components/AnalyticsDashboard';
+import { MCPSetupInstructions } from '../components/MCPSetupInstructions';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+
+// Helper functions
+const formatDuration = (value?: number, unit: 'seconds' | 'minutes' = 'minutes'): string => {
+  if (!value) return '';
+  let minutes = unit === 'seconds' ? Math.floor(value / 60) : value;
+  if (unit === 'seconds' && value < 60) return `${value}s`;
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+};
 
 // Session represents a Claude conversation from start to context limit/close
 interface Session {
@@ -65,7 +78,7 @@ interface RawEvent {
   impact: 'low' | 'medium' | 'high';
 }
 
-type ViewType = 'sessions' | 'blocks' | 'traces' | 'events' | 'overview' | 'search' | 'claude';
+type ViewType = 'sessions' | 'blocks' | 'traces' | 'events' | 'overview' | 'search' | 'claude' | 'analytics';
 type PanelContent = {
   type: ViewType;
   data?: any;
@@ -124,12 +137,33 @@ export function IDESessionDashboard() {
   const [draggedPanel, setDraggedPanel] = useState<string | null>(null);
   const [dragOverPanel, setDragOverPanel] = useState<string | null>(null);
   
-  // Data state
+  // Data state - Initialize mcpEvents from localStorage if available
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['active-session']));
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const [mcpEvents, setMcpEvents] = useState<any[]>(() => {
+    // Try to load events from localStorage on initial load
+    try {
+      const savedEvents = localStorage.getItem('mcp-events');
+      if (savedEvents) {
+        const events = JSON.parse(savedEvents);
+        console.log('Restored', events.length, 'events from localStorage');
+        return events;
+      }
+    } catch (error) {
+      console.error('Failed to load events from localStorage:', error);
+    }
+    return [];
+  });
+  const [fileChanges, setFileChanges] = useState<any[]>([]);
+
+  // Use ref to access current mcpEvents in WebSocket handler
+  const mcpEventsRef = useRef(mcpEvents);
+  useEffect(() => {
+    mcpEventsRef.current = mcpEvents;
+  }, [mcpEvents]);
+
   // Project state
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(projectId || null);
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -137,11 +171,477 @@ export function IDESessionDashboard() {
 
   // MCP Setup state
   const [showMCPSetup, setShowMCPSetup] = useState(false);
+  const [showMCPInstructions, setShowMCPInstructions] = useState(false);
   
   // Constants for pagination
   const SESSIONS_PER_PAGE = 20;
   const PAGE_SIZE = 20;
+
+  // Helper function to organize events into blocks and traces
+  const organizeEventsIntoBlocks = (events: RawEvent[]): Block[] => {
+    if (events.length === 0) return [];
+
+    const blocks: Block[] = [];
+    let currentBlock: Block | null = null;
+    let currentTrace: Trace | null = null;
+    let blockEvents: RawEvent[] = [];
+    let traceEvents: RawEvent[] = [];
+
+    events.forEach((event, index) => {
+      const prevEvent = events[index - 1];
+      const timeSincePrev = prevEvent
+        ? (new Date(event.timestamp).getTime() - new Date(prevEvent.timestamp).getTime()) / 1000 / 60
+        : 0;
+
+      // Start new block after 15 minutes gap or different activity type
+      const shouldStartNewBlock = !currentBlock || timeSincePrev > 15 ||
+        (prevEvent && detectActivityChange(prevEvent, event));
+
+      if (shouldStartNewBlock) {
+        // Save previous block if exists
+        if (currentBlock && currentTrace) {
+          currentTrace.events = traceEvents;
+          currentBlock.traces.push(currentTrace);
+          currentBlock.metrics.filesModified = blockEvents.filter(e => e.type === 'file_change').length;
+          currentBlock.metrics.toolsUsed = [...new Set(blockEvents.filter(e => e.tool).map(e => e.tool))];
+          blocks.push(currentBlock);
+        }
+
+        // Create new block
+        const blockType = determineBlockType(event);
+        const blockTitle = getBlockTitle(blockType, event);
+        const timeLabel = formatTimestamp(event.timestamp);
+        currentBlock = {
+          id: `block-${blocks.length + 1}`,
+          sessionId: 'mcp-realtime',
+          title: `${blockTitle} • ${timeLabel}`,
+          type: blockType,
+          summary: generateBlockSummary(blockType, event),
+          startTime: event.timestamp,
+          status: 'completed' as const,
+          traces: [],
+          metrics: {
+            filesModified: 0,
+            linesChanged: 0,
+            toolsUsed: []
+          }
+        };
+        blockEvents = [];
+        currentTrace = null;
+        traceEvents = [];
+      }
+
+      // Start new trace every 5 events of same type or on type change
+      const shouldStartNewTrace = !currentTrace || traceEvents.length >= 5 ||
+        (prevEvent && prevEvent.type !== event.type);
+
+      if (shouldStartNewTrace && currentBlock) {
+        // Save previous trace if exists
+        if (currentTrace && traceEvents.length > 0) {
+          currentTrace.events = traceEvents;
+          currentTrace.duration = calculateDuration(traceEvents);
+          currentBlock.traces.push(currentTrace);
+        }
+
+        // Create new trace
+        currentTrace = {
+          id: `trace-${currentBlock.traces.length + 1}`,
+          blockId: currentBlock.id,
+          name: getTraceName(event),
+          type: getTraceType(event),
+          events: [],
+          summary: '',
+          duration: 0
+        };
+        traceEvents = [];
+      }
+
+      // Add event to current collections
+      blockEvents.push(event);
+      traceEvents.push(event);
+    });
+
+    // Save final block and trace
+    if (currentBlock && currentTrace) {
+      currentTrace.events = traceEvents;
+      currentTrace.duration = calculateDuration(traceEvents);
+      currentBlock.traces.push(currentTrace);
+      currentBlock.metrics.filesModified = blockEvents.filter(e => e.type === 'file_change').length;
+      currentBlock.metrics.toolsUsed = [...new Set(blockEvents.filter(e => e.tool).map(e => e.tool))];
+      currentBlock.status = 'in_progress'; // Last block is still in progress
+      blocks.push(currentBlock);
+    }
+
+    return blocks;
+  };
+
+  const detectActivityChange = (prev: RawEvent, curr: RawEvent): boolean => {
+    // Major activity changes that warrant new block
+    if (prev.tool === 'git' && curr.tool !== 'git') return true;
+    if (prev.type === 'error' && curr.type !== 'error') return true;
+    return false;
+  };
+
+  const determineBlockType = (event: RawEvent): Block['type'] => {
+    if (event.type === 'error') return 'debugging';
+    if (event.tool === 'git') return 'review';
+    if (event.type === 'file_change') return 'implementation';
+    return 'exploration';
+  };
+
+  const getBlockTitle = (type: Block['type'], event: RawEvent): string => {
+    // Extract contextual information from the event
+    const data = event.data || {};
+
+    switch (type) {
+      case 'debugging': {
+        const errorMessage = data.error || data.message || '';
+        return errorMessage ? `Fixing: ${errorMessage.substring(0, 50)}...` : 'Error Resolution';
+      }
+      case 'review': {
+        // Git operations - show branch and operation type
+        if (data.subtype === 'commit') {
+          return `Git Commit: ${data.message?.substring(0, 40) || 'Changes'}`;
+        }
+        if (data.subtype === 'status_update' && data.status) {
+          const branch = data.status.branch || 'main';
+          const modified = data.status.modified || 0;
+          const ahead = data.status.ahead || 0;
+          const behind = data.status.behind || 0;
+
+          let statusText = `Git: ${branch}`;
+          if (modified > 0) statusText += ` (${modified} modified)`;
+          if (ahead > 0) statusText += ` ↑${ahead}`;
+          if (behind > 0) statusText += ` ↓${behind}`;
+          return statusText;
+        }
+        if (data.status?.branch) {
+          return `Git: ${data.status.branch} (${data.status.modified || 0} modified)`;
+        }
+        return 'Git Operations';
+      }
+      case 'implementation': {
+        // File changes - show affected files
+        if (data.files && data.files.length > 0) {
+          const fileNames = data.files.map((f: any) =>
+            typeof f === 'string' ? f.split('/').pop() : f.path?.split('/').pop()
+          ).filter(Boolean);
+          if (fileNames.length === 1) {
+            return `Editing: ${fileNames[0]}`;
+          } else if (fileNames.length <= 3) {
+            return `Editing: ${fileNames.join(', ')}`;
+          } else {
+            return `Editing ${fileNames.length} files`;
+          }
+        }
+        if (data.path) {
+          const fileName = data.path.split('/').pop();
+          return `Working on: ${fileName}`;
+        }
+        return 'Code Changes';
+      }
+      case 'task': {
+        return data.taskName || 'Task Execution';
+      }
+      default: {
+        // Try to extract any meaningful context
+        if (data.action) return data.action;
+        if (data.command) return `Running: ${data.command.substring(0, 30)}...`;
+        return 'Development Activity';
+      }
+    }
+  };
+
+  const getTraceName = (event: RawEvent): string => {
+    const data = event.data || {};
+
+    if (event.tool === 'git') {
+      if (data.subtype) return `git ${data.subtype}`;
+      return 'git operations';
+    }
+
+    if (event.type === 'file_change') {
+      if (data.files && data.files.length > 0) {
+        const ext = data.files[0].split('.').pop();
+        return `${ext} file changes`;
+      }
+      return 'File modifications';
+    }
+
+    if (event.tool) {
+      return `${event.tool} ${data.action || 'operations'}`;
+    }
+
+    return event.type.replace('_', ' ');
+  };
+
+  const getTraceType = (event: RawEvent): Trace['type'] => {
+    if (event.type === 'error') return 'error_handling';
+    if (event.type === 'file_change') return 'file_operation';
+    if (event.tool) return 'tool_sequence';
+    return 'conversation';
+  };
+
+  const calculateDuration = (events: RawEvent[]): number => {
+    if (events.length < 2) return 0;
+    const first = new Date(events[0].timestamp).getTime();
+    const last = new Date(events[events.length - 1].timestamp).getTime();
+    return Math.round((last - first) / 1000); // seconds
+  };
+
+  const formatTimestamp = (timestamp: string): string => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
+
+
+  const generateBlockSummary = (type: Block['type'], event: RawEvent): string => {
+    const data = event.data || {};
+
+    switch (type) {
+      case 'debugging':
+        return `Resolving errors and debugging issues`;
+      case 'review':
+        if (data.status) {
+          const { modified = 0, added = 0, deleted = 0 } = data.status;
+          return `Repository status: +${added} -${deleted} ~${modified} files`;
+        }
+        return 'Version control operations';
+      case 'implementation':
+        if (data.stats) {
+          return `${data.stats.totalChanges || 0} changes across ${data.stats.filesChanged || 0} files`;
+        }
+        return 'Implementing features and modifications';
+      default:
+        return 'Exploring and analyzing codebase';
+    }
+  };
   
+  // Save events to localStorage whenever they change
+  useEffect(() => {
+    if (mcpEvents.length > 0) {
+      try {
+        // Limit storage to last 100 events to avoid localStorage limits
+        const eventsToSave = mcpEvents.slice(-100);
+        localStorage.setItem('mcp-events', JSON.stringify(eventsToSave));
+        console.log('Saved', eventsToSave.length, 'events to localStorage');
+      } catch (error) {
+        console.error('Failed to save events to localStorage:', error);
+      }
+    }
+  }, [mcpEvents]);
+
+  // Estimate token usage from events (rough approximation)
+  const estimateTokenUsage = (events: RawEvent[]): number => {
+    let totalTokens = 0;
+    events.forEach(event => {
+      // Estimate tokens from event data (roughly 1 token per 4 characters)
+      const dataString = JSON.stringify(event.data || {});
+      totalTokens += Math.ceil(dataString.length / 4);
+      // Add base tokens for event metadata
+      totalTokens += 20; // timestamp, type, tool, impact etc.
+    });
+    return totalTokens;
+  };
+
+  // Update session when mcpEvents changes
+  useEffect(() => {
+    if (currentSession && currentSession.id === 'mcp-realtime') {
+      // Organize events into logical blocks and traces
+      const organizedBlocks = organizeEventsIntoBlocks(mcpEvents);
+
+      // Calculate context usage (assuming 200k token limit)
+      const tokensUsed = estimateTokenUsage(mcpEvents);
+      const maxTokens = 200000; // Claude's context window
+      const contextPercentage = Math.min(100, Math.round((tokensUsed / maxTokens) * 100));
+
+      const updatedSession = {
+        ...currentSession,
+        metadata: {
+          ...currentSession.metadata,
+          totalEvents: mcpEvents.length,
+          totalBlocks: organizedBlocks.length,
+          contextUsage: contextPercentage
+        },
+        blocks: organizedBlocks
+      };
+      setCurrentSession(updatedSession);
+      setSessions([updatedSession]);
+      console.log(`Updated session: ${mcpEvents.length} events, ${organizedBlocks.length} blocks, ${contextPercentage}% context`);
+    }
+  }, [mcpEvents]); // Re-run when events array changes
+
+  // Connect to MCP WebSocket for real data
+  useEffect(() => {
+    const connectToMCP = () => {
+      try {
+        const ws = new WebSocket('ws://localhost:3334');
+
+        ws.onopen = () => {
+          console.log('Dashboard connected to MCP server');
+          // Request initial data
+          ws.send(JSON.stringify({ type: 'get_analytics' }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('MCP data received:', data);
+
+            // Handle different message types
+            if (data.type === 'connected') {
+              console.log('Connected with client ID:', data.clientId);
+
+              // Get existing events from ref (which may have been loaded from localStorage)
+              const existingEvents = mcpEventsRef.current;
+              console.log('Creating session with', existingEvents.length, 'existing events');
+
+              // Organize events into logical blocks and traces
+              const organizedBlocks = organizeEventsIntoBlocks(existingEvents);
+
+              const sessionStartTime = existingEvents.length > 0 && existingEvents[0]?.timestamp
+                ? existingEvents[0].timestamp
+                : new Date().toISOString();
+
+              // Calculate context usage
+              const tokensUsed = estimateTokenUsage(existingEvents);
+              const maxTokens = 200000;
+              const contextPercentage = Math.min(100, Math.round((tokensUsed / maxTokens) * 100));
+
+              const realtimeSession: Session = {
+                id: 'mcp-realtime',
+                startTime: sessionStartTime,
+                status: 'active',
+                title: 'Development Session - Frizy AI',
+                summary: `Active coding session with ${existingEvents.length} tracked events`,
+                metadata: {
+                  totalEvents: existingEvents.length,
+                  totalBlocks: organizedBlocks.length || 1,
+                  contextUsage: contextPercentage,
+                  duration: 0
+                },
+                blocks: organizedBlocks.length > 0 ? organizedBlocks : [{
+                  id: 'initial-block',
+                  sessionId: 'mcp-realtime',
+                  title: 'Starting Session',
+                  type: 'exploration',
+                  summary: 'Waiting for events...',
+                  startTime: new Date().toISOString(),
+                  status: 'in_progress',
+                  traces: [],
+                  metrics: {
+                    filesModified: 0,
+                    linesChanged: 0,
+                    toolsUsed: []
+                  }
+                }]
+              };
+              setCurrentSession(realtimeSession);
+              setSessions([realtimeSession]);
+            } else if (data.type === 'file_changes') {
+              console.log('File changes detected:', data);
+              setFileChanges(prev => [...prev, data]);
+              // Add file change as an event
+              const fileEvent: RawEvent = {
+                id: `file-${Date.now()}`,
+                timestamp: new Date().toISOString(),
+                type: 'file_change',
+                data: data,
+                impact: data.stats?.totalChanges > 5 ? 'high' : 'medium'
+              };
+              console.log('Creating file event:', fileEvent);
+              setMcpEvents(prev => {
+                const newEvents = [...prev, fileEvent];
+                console.log('Updated mcpEvents array:', newEvents);
+                console.log('Total events now:', newEvents.length);
+
+                // Check if we should create a new block or trace
+                if (currentSession && currentSession.id === 'mcp-realtime') {
+                  const lastEvent = prev[prev.length - 1];
+                  const timeSinceLastEvent = lastEvent
+                    ? (new Date().getTime() - new Date(lastEvent.timestamp).getTime()) / 1000 / 60 // minutes
+                    : 0;
+
+                  // Create new block after 15 minutes of inactivity
+                  if (timeSinceLastEvent > 15) {
+                    console.log('Creating new block due to time gap:', timeSinceLastEvent, 'minutes');
+                    // This would trigger new block creation logic
+                  }
+
+                  // Group events into traces by type (every 5 similar events)
+                  const recentFileChanges = prev.slice(-5).filter(e => e.type === 'file_change').length;
+                  if (recentFileChanges >= 5) {
+                    console.log('Should create new trace for file change batch');
+                  }
+                }
+
+                return newEvents;
+              });
+            } else if (data.type === 'git_event') {
+              console.log('Git event:', data);
+              const gitEvent: RawEvent = {
+                id: `git-${Date.now()}`,
+                timestamp: new Date().toISOString(),
+                type: 'tool_use',
+                tool: 'git',
+                data: data,
+                impact: 'medium'
+              };
+              setMcpEvents(prev => [...prev, gitEvent]);
+            } else if (data.type === 'events_logged') {
+              console.log('Events logged:', data);
+              // Add logged events to our events list
+              const newEvents: RawEvent[] = data.events.map((e: any) => ({
+                id: e.id,
+                timestamp: new Date().toISOString(),
+                type: e.type || 'tool_use',
+                tool: e.tool,
+                data: e.data,
+                impact: e.impact || 'low'
+              }));
+
+              setMcpEvents(prev => [...prev, ...newEvents]);
+            }
+          } catch (error) {
+            console.error('Error parsing MCP message:', error);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('MCP WebSocket error:', error);
+        };
+
+        ws.onclose = () => {
+          console.log('MCP WebSocket closed, reconnecting in 5s...');
+          setTimeout(connectToMCP, 5000);
+        };
+
+        return ws;
+      } catch (error) {
+        console.error('Failed to connect to MCP:', error);
+        setTimeout(connectToMCP, 5000);
+      }
+    };
+
+    const ws = connectToMCP();
+
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+    };
+  }, []);
+
   // Check for projects and load data
   useEffect(() => {
     if (user) {
@@ -153,7 +653,10 @@ export function IDESessionDashboard() {
     if (currentProjectId) {
       loadProjectSessions(currentProjectId);
     } else if (hasProjects === false) {
-      loadSampleSessions();
+      // Don't load sample sessions if we have MCP data or a current session
+      if (mcpEvents.length === 0 && !currentSession) {
+        loadSampleSessions();
+      }
     }
   }, [currentProjectId, hasProjects]);
 
@@ -499,13 +1002,6 @@ export function IDESessionDashboard() {
     }
   };
 
-  const formatDuration = (minutes?: number) => {
-    if (!minutes) return '';
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
-  };
 
   const formatTimeAgo = (timestamp: string) => {
     const now = new Date();
@@ -617,10 +1113,11 @@ export function IDESessionDashboard() {
       case 'events':
         // If no specific event is selected, show all events
         if (!panel.data) {
-          const allEvents = sessions.flatMap(s => s.blocks.flatMap(b => b.traces.flatMap(t => t.events)));
-          return <AllEventsView events={allEvents} onEventClick={(event) => openPanel('events', event)} />;
+          // Use mcpEvents if available, otherwise fall back to nested events
+          const allEvents = mcpEvents.length > 0 ? mcpEvents : sessions.flatMap(s => s.blocks.flatMap(b => b.traces.flatMap(t => t.events)));
+          return <AllEventsView events={allEvents} onEventClick={(event) => openPanel('events', event)} onCompile={handleCompileToClaudePanel} />;
         }
-        return <EventView event={panel.data} />;
+        return <EventView event={panel.data} onCompile={handleCompileToClaudePanel} />;
       case 'claude':
         return <ClaudePanel sessions={sessions} currentSession={currentSession} initialPrompt={panel.data?.initialPrompt} />;
       default:
@@ -671,6 +1168,15 @@ export function IDESessionDashboard() {
         <div className="flex items-center gap-4">
           {/* Connection Status */}
           <ConnectionStatus onSetupClick={() => setShowMCPSetup(true)} />
+
+          {/* MCP Instructions Button */}
+          <button
+            onClick={() => setShowMCPInstructions(true)}
+            className="px-3 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors flex items-center gap-1.5"
+          >
+            <HelpCircle className="h-4 w-4" />
+            <span>Setup Guide</span>
+          </button>
 
           <div className="h-6 w-px bg-gray-700" />
 
@@ -1008,6 +1514,13 @@ export function IDESessionDashboard() {
           window.location.reload();
         }}
       />
+
+      {/* MCP Setup Instructions Modal */}
+      {showMCPInstructions && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <MCPSetupInstructions onClose={() => setShowMCPInstructions(false)} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1020,14 +1533,6 @@ function OverviewView({ sessions, currentSession, onItemClick, onCompile }: {
   onCompile?: (prompt: string) => void;
 }) {
   const [copied, setCopied] = useState(false);
-
-  const formatDuration = (minutes?: number) => {
-    if (!minutes) return '';
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
-  };
 
   const compileToPrompt = () => {
     let prompt = `## Sessions Overview\n\n`;
@@ -1170,14 +1675,6 @@ function SessionView({ session, onBlockClick, onCompile }: {
   if (!session) return <div className="p-4">No session selected</div>;
 
   const [copied, setCopied] = useState(false);
-
-  const formatDuration = (minutes?: number) => {
-    if (!minutes) return '';
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
-  };
 
   const compileToPrompt = () => {
     let prompt = `## Context: ${session.title}\n\n`;
@@ -1490,26 +1987,62 @@ function AllTracesView({ traces, onTraceClick, onCompile }: {
 }
 
 // All Events View - Shows all events
-function AllEventsView({ events, onEventClick }: {
+function AllEventsView({ events, onEventClick, onCompile }: {
   events: RawEvent[];
   onEventClick: (event: RawEvent) => void;
+  onCompile: (prompt: string) => void;
 }) {
+  const compileAllEvents = () => {
+    const prompt = `Analyze these ${events.length} events from the current development session:\n\n${events.map(e =>
+      `- [${e.timestamp}] ${e.type}${e.tool ? ` (${e.tool})` : ''}: ${JSON.stringify(e.data).substring(0, 100)}...`
+    ).join('\n')}\n\nWhat patterns do you see in these events?`;
+    onCompile(prompt);
+  };
+
   return (
     <div className="p-4">
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold">All Events</h2>
-        <p className="text-sm text-gray-400 mt-1">{events.length} events across all traces</p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">All Events</h2>
+          <p className="text-sm text-gray-400 mt-1">{events.length} events across all traces</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={compileAllEvents}
+            className="flex items-center gap-2 px-3 py-1.5 bg-purple-500/20 text-purple-400 rounded hover:bg-purple-500/30 transition-colors"
+          >
+            <Sparkles className="h-4 w-4" />
+            <span>Compile All</span>
+          </button>
+          {events.length > 0 && (
+            <button
+              onClick={() => {
+                if (confirm('Clear all events? This will remove them from localStorage.')) {
+                  setMcpEvents([]);
+                  localStorage.removeItem('mcp-events');
+                  console.log('Cleared all events');
+                }
+              }}
+              className="px-3 py-1.5 text-xs text-gray-400 hover:text-red-400 transition-colors"
+              title="Clear all events"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">
         {events.map((event, index) => (
           <div
             key={event.id}
-            onClick={() => onEventClick(event)}
-            className="bg-gray-900 rounded p-3 cursor-pointer hover:bg-gray-800 transition-colors"
+            className="bg-gray-900 rounded p-3 hover:bg-gray-800 transition-colors group"
           >
             <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2">
+              <div
+                onClick={() => onEventClick(event)}
+                className="flex items-center gap-2 cursor-pointer flex-1"
+              >
                 <div className={`h-2 w-2 rounded-full ${colors.event[event.type]}`} />
                 <span className="text-sm font-medium">{event.type}</span>
                 {event.tool && (
@@ -1518,15 +2051,31 @@ function AllEventsView({ events, onEventClick }: {
                   </span>
                 )}
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded ${
-                event.impact === 'high' ? 'bg-red-500/20 text-red-400' :
-                event.impact === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
-                'bg-gray-500/20 text-gray-400'
-              }`}>
-                {event.impact} impact
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs px-2 py-0.5 rounded ${
+                  event.impact === 'high' ? 'bg-red-500/20 text-red-400' :
+                  event.impact === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                  'bg-gray-500/20 text-gray-400'
+                }`}>
+                  {event.impact} impact
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const prompt = `Analyze this ${event.type} event:\n\nTool: ${event.tool || 'N/A'}\nImpact: ${event.impact}\nTime: ${event.timestamp}\nData: ${JSON.stringify(event.data).substring(0, 200)}...\n\nWhat does this tell us?`;
+                    onCompile(prompt);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-purple-500/20 rounded"
+                  title="Compile this event"
+                >
+                  <Sparkles className="h-3 w-3 text-purple-400" />
+                </button>
+              </div>
             </div>
-            <div className="text-xs text-gray-500">
+            <div
+              onClick={() => onEventClick(event)}
+              className="text-xs text-gray-500 cursor-pointer"
+            >
               {new Date(event.timestamp).toLocaleTimeString()}
             </div>
           </div>
@@ -1793,14 +2342,38 @@ function TraceView({ trace, onEventClick, onCompile }: {
 }
 
 // Event View - Shows raw event details
-function EventView({ event }: { event: RawEvent | null }) {
+function EventView({ event, onCompile }: { event: RawEvent | null; onCompile: (prompt: string) => void }) {
   if (!event) return <div className="p-4">No event selected</div>;
+
+  const compileEvent = () => {
+    const prompt = `Analyze this event from my development session:
+
+Event Type: ${event.type}
+Tool: ${event.tool || 'N/A'}
+Impact: ${event.impact}
+Timestamp: ${event.timestamp}
+
+Event Data:
+${JSON.stringify(event.data, null, 2)}
+
+What does this event tell us about the development activity? What actions were taken and what was their impact?`;
+    onCompile(prompt);
+  };
 
   return (
     <div className="p-4">
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold">Event Details</h2>
-        <p className="text-sm text-gray-400 mt-1">Raw event information</p>
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold">Event Details</h2>
+          <p className="text-sm text-gray-400 mt-1">Raw event information</p>
+        </div>
+        <button
+          onClick={compileEvent}
+          className="flex items-center gap-1.5 px-2 py-1 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white rounded text-xs transition-all"
+        >
+          <Sparkles className="h-3 w-3" />
+          <span>Compile</span>
+        </button>
       </div>
 
       {/* Event Details Block */}

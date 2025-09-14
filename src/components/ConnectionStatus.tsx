@@ -31,52 +31,128 @@ export function ConnectionStatus({ onSetupClick }: ConnectionStatusProps) {
 
   const [showDetails, setShowDetails] = useState(false);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [ws, setWs] = useState<WebSocket | null>(null);
 
-  // Load saved MCP configuration
+  // Connect to actual MCP WebSocket server
   useEffect(() => {
-    const savedConfig = localStorage.getItem('mcp_config');
-    if (savedConfig) {
-      const config = JSON.parse(savedConfig);
-      if (config.autoConnect) {
-        connectToMCP(config);
+    const connectWebSocket = () => {
+      try {
+        // Connect to the real MCP server on port 3334
+        const websocket = new WebSocket('ws://localhost:3334');
+
+        websocket.onopen = () => {
+          console.log('Connected to MCP server on port 3334');
+          setMcpConnection({
+            status: 'connected',
+            serverName: 'Frizy MCP Server',
+            lastConnected: new Date(),
+            autoReconnect: true
+          });
+          setReconnectAttempts(0);
+        };
+
+        websocket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('MCP Server message:', data);
+
+            // Handle different message types from the server
+            if (data.type === 'connected') {
+              console.log('MCP Server ready, client ID:', data.clientId);
+            } else if (data.type === 'file_changes') {
+              console.log('File changes detected:', data.summary);
+            } else if (data.type === 'git_event') {
+              console.log('Git event:', data.subtype);
+            }
+          } catch (error) {
+            console.error('Error parsing MCP message:', error);
+          }
+        };
+
+        websocket.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setMcpConnection(prev => ({
+            ...prev,
+            status: 'error'
+          }));
+        };
+
+        websocket.onclose = () => {
+          console.log('Disconnected from MCP server');
+          setMcpConnection(prev => ({
+            ...prev,
+            status: 'disconnected'
+          }));
+
+          // Auto-reconnect after 5 seconds
+          if (mcpConnection.autoReconnect && reconnectAttempts < 3) {
+            setReconnectAttempts(prev => prev + 1);
+            setTimeout(connectWebSocket, 5000);
+          }
+        };
+
+        setWs(websocket);
+      } catch (error) {
+        console.error('Failed to create WebSocket:', error);
+        setMcpConnection(prev => ({
+          ...prev,
+          status: 'error'
+        }));
       }
-    }
+    };
+
+    connectWebSocket();
 
     // Check GitHub connection
     checkGitHubConnection();
 
-    // Set up auto-reconnection
-    const reconnectInterval = setInterval(() => {
-      if (mcpConnection.status === 'disconnected' && mcpConnection.autoReconnect) {
-        attemptReconnect();
+    return () => {
+      if (ws) {
+        ws.close();
       }
-    }, 5000); // Try every 5 seconds
-
-    return () => clearInterval(reconnectInterval);
+    };
   }, []);
 
-  const connectToMCP = async (config?: any) => {
+  const connectToMCP = () => {
+    // Close existing connection if any
+    if (ws) {
+      ws.close();
+    }
+
     setMcpConnection(prev => ({ ...prev, status: 'connecting' }));
 
     try {
-      // Simulate MCP connection - replace with actual MCP connection logic
-      const response = await fetch('/api/mcp/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config || {})
-      }).catch(() => null);
+      const websocket = new WebSocket('ws://localhost:3334');
 
-      if (response && response.ok) {
+      websocket.onopen = () => {
+        console.log('Reconnected to MCP server');
         setMcpConnection({
           status: 'connected',
-          serverName: 'Claude MCP Server',
+          serverName: 'Frizy MCP Server',
           lastConnected: new Date(),
           autoReconnect: true
         });
         setReconnectAttempts(0);
-      } else {
-        throw new Error('Connection failed');
-      }
+      };
+
+      websocket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('MCP Server message:', data);
+        } catch (error) {
+          console.error('Error parsing MCP message:', error);
+        }
+      };
+
+      websocket.onerror = () => {
+        setMcpConnection(prev => ({ ...prev, status: 'error' }));
+      };
+
+      websocket.onclose = () => {
+        setMcpConnection(prev => ({ ...prev, status: 'disconnected' }));
+      };
+
+      setWs(websocket);
     } catch (error) {
       setMcpConnection(prev => ({ ...prev, status: 'error' }));
       console.error('MCP connection error:', error);
@@ -106,22 +182,6 @@ export function ConnectionStatus({ onSetupClick }: ConnectionStatusProps) {
     }
   };
 
-  const attemptReconnect = async () => {
-    if (reconnectAttempts >= 3) {
-      // After 3 attempts, show setup prompt
-      setMcpConnection(prev => ({ ...prev, autoReconnect: false }));
-      if (onSetupClick) {
-        onSetupClick();
-      }
-      return;
-    }
-
-    setReconnectAttempts(prev => prev + 1);
-    const savedConfig = localStorage.getItem('mcp_config');
-    if (savedConfig) {
-      await connectToMCP(JSON.parse(savedConfig));
-    }
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {

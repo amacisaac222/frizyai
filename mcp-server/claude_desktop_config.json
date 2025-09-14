@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "frizy": {
+      "command": "node",
+      "args": ["C:/Users/amaci/Desktop/frizyai/mcp-server/index.js"],
+      "env": {
+        "MCP_PORT": "3334",
+        "MCP_DB": "./frizy-mcp.db"
+      }
+    }
+  }
+}

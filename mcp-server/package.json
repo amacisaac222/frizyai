@@ -22,11 +22,13 @@
   "author": "Frizy.ai",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^0.5.0",
-    "zod": "^3.22.4",
-    "winston": "^3.11.0",
-    "dotenv": "^16.3.1",
-    "axios": "^1.6.2"
+    "@supabase/supabase-js": "^2.47.10",
+    "better-sqlite3": "^11.5.0",
+    "chokidar": "^4.0.1",
+    "dotenv": "^16.6.1",
+    "nanoid": "^5.0.9",
+    "simple-git": "^3.27.0",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
@@ -44,5 +46,9 @@
   "files": [
     "dist",
     "README.md"
-  ]
+  ],
+  "directories": {
+    "test": "tests"
+  },
+  "types": "./dist/index.d.ts"
 }
