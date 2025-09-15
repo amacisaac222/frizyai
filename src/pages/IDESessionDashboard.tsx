@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { X, ChevronRight, ChevronDown, Maximize2, Search, MessageSquare, BarChart, Settings, Map, Bot, Sparkles, Copy, CheckCircle, Layers, Activity, Database, GitBranch, Clock, HelpCircle } from 'lucide-react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { X, ChevronRight, ChevronDown, Maximize2, Search, MessageSquare, BarChart, Settings, Map, Bot, Sparkles, Copy, CheckCircle, Layers, Activity, Database, GitBranch, Clock, HelpCircle, Workflow } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { NaturalLanguageSearch } from '../components/search/NaturalLanguageSearch';
 import { RoadmapView } from '../components/roadmap/RoadmapView';
 import { ClaudePanel } from '../components/claude/ClaudePanel';
@@ -12,6 +12,7 @@ import { AnalyticsDashboard } from '../components/AnalyticsDashboard';
 import { MCPSetupInstructions } from '../components/MCPSetupInstructions';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { SessionManager } from '../utils/sessionManager';
 
 // Helper functions
 const formatDuration = (value?: number, unit: 'seconds' | 'minutes' = 'minutes'): string => {
@@ -136,10 +137,42 @@ export function IDESessionDashboard() {
   ]);
   const [draggedPanel, setDraggedPanel] = useState<string | null>(null);
   const [dragOverPanel, setDragOverPanel] = useState<string | null>(null);
-  
+  const [sessionStateMessage, setSessionStateMessage] = useState<{ text: string; type: 'info' | 'success' | 'warning' } | null>(null);
+
   // Data state - Initialize mcpEvents from localStorage if available
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentSession, setCurrentSession] = useState<Session | null>(null);
+  const [sessions, setSessions] = useState<Session[]>(() => {
+    // Load sessions from localStorage on initial mount
+    try {
+      const stored = localStorage.getItem('mcp-sessions');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        console.log('Loaded', parsed.length, 'sessions from localStorage');
+        return parsed;
+      }
+    } catch (err) {
+      console.error('Failed to load sessions:', err);
+    }
+    return [];
+  });
+
+  const [currentSession, setCurrentSession] = useState<Session | null>(() => {
+    // Find the active session on initial mount (not necessarily from today)
+    try {
+      const stored = localStorage.getItem('mcp-sessions');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Look for any active session, not just today's
+        const activeSession = parsed.find((s: Session) => s.status === 'active');
+        if (activeSession) {
+          console.log('Found active session:', activeSession.id);
+          return activeSession;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load current session:', err);
+    }
+    return null;
+  });
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set(['active-session']));
   const [searchQuery, setSearchQuery] = useState('');
   const [mcpEvents, setMcpEvents] = useState<any[]>(() => {
@@ -148,8 +181,28 @@ export function IDESessionDashboard() {
       const savedEvents = localStorage.getItem('mcp-events');
       if (savedEvents) {
         const events = JSON.parse(savedEvents);
-        console.log('Restored', events.length, 'events from localStorage');
-        return events;
+
+        // Filter to only include today's events
+        const today = new Date().toISOString().split('T')[0];
+        const todaysEvents = events.filter((event: any) => {
+          const eventDate = new Date(event.timestamp).toISOString().split('T')[0];
+          return eventDate === today;
+        });
+
+        console.log('Restored', todaysEvents.length, 'events from today (out of', events.length, 'total)');
+
+        // Archive old events separately
+        const oldEvents = events.filter((event: any) => {
+          const eventDate = new Date(event.timestamp).toISOString().split('T')[0];
+          return eventDate !== today;
+        });
+
+        if (oldEvents.length > 0) {
+          localStorage.setItem('mcp-archived-events', JSON.stringify(oldEvents));
+          console.log('Archived', oldEvents.length, 'old events');
+        }
+
+        return todaysEvents;
       }
     } catch (error) {
       console.error('Failed to load events from localStorage:', error);
@@ -456,7 +509,7 @@ export function IDESessionDashboard() {
 
   // Update session when mcpEvents changes
   useEffect(() => {
-    if (currentSession && currentSession.id === 'mcp-realtime') {
+    if (currentSession && currentSession.id.startsWith('mcp-session-')) {
       // Organize events into logical blocks and traces
       const organizedBlocks = organizeEventsIntoBlocks(mcpEvents);
 
@@ -476,10 +529,127 @@ export function IDESessionDashboard() {
         blocks: organizedBlocks
       };
       setCurrentSession(updatedSession);
-      setSessions([updatedSession]);
+      setSessions(prev => {
+        const updated = prev.map(s => s.id === updatedSession.id ? updatedSession : s);
+        // Save to localStorage
+        try {
+          localStorage.setItem('mcp-sessions', JSON.stringify(updated));
+        } catch (err) {
+          console.error('Failed to save sessions:', err);
+        }
+        return updated;
+      });
       console.log(`Updated session: ${mcpEvents.length} events, ${organizedBlocks.length} blocks, ${contextPercentage}% context`);
     }
-  }, [mcpEvents]); // Re-run when events array changes
+  }, [mcpEvents, currentSession?.id]); // Re-run when events array changes or session id changes
+
+  // Helper function to handle WebSocket messages
+  const handleWebSocketMessage = (event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data);
+      console.log('MCP data received:', data);
+
+      // Process message based on type
+      processWebSocketData(data);
+    } catch (error) {
+      console.error('Error processing MCP message:', error);
+    }
+  };
+
+  // Process WebSocket data based on message type
+  const processWebSocketData = (data: any) => {
+    // Handle different message types
+    if (data.type === 'connected') {
+      handleConnectedMessage(data);
+    } else if (data.type === 'file_changes') {
+      handleFileChangesMessage(data);
+    } else if (data.type === 'git_event') {
+      handleGitEventMessage(data);
+    } else if (data.type === 'events_logged') {
+      handleEventsLoggedMessage(data);
+    }
+  };
+
+  // Handle 'connected' message type
+  const handleConnectedMessage = (data: any) => {
+    console.log('Connected with client ID:', data.clientId);
+
+    // Get existing events from ref (which may have been loaded from localStorage)
+    const existingEvents = mcpEventsRef.current;
+    console.log('Creating session with', existingEvents.length, 'existing events');
+
+    // Organize events into logical blocks and traces
+    const organizedBlocks = organizeEventsIntoBlocks(existingEvents);
+
+    const sessionStartTime = existingEvents.length > 0 && existingEvents[0]?.timestamp
+      ? existingEvents[0].timestamp
+      : new Date().toISOString();
+
+    // Calculate context usage
+    const tokensUsed = estimateTokenUsage(existingEvents);
+    const maxTokens = 200000;
+    const contextPercentage = Math.min(100, Math.round((tokensUsed / maxTokens) * 100));
+
+    // Import and use the full logic
+    import('../utils/handleConnectedMessage').then(({ handleConnectedMessageLogic }) => {
+      handleConnectedMessageLogic(
+        data,
+        existingEvents,
+        contextPercentage,
+        setSessions,  // Fixed: was setPreviousSessions
+        setCurrentSession,
+        setMcpEvents,
+        setSessionStateMessage,
+        currentProjectId
+      );
+    });
+  };
+
+  // Handle 'file_changes' message type
+  const handleFileChangesMessage = (data: any) => {
+    console.log('File changes detected:', data);
+    setFileChanges(prev => [...prev, data]);
+    // Add file change as an event
+    const fileEvent: RawEvent = {
+      id: `file-${Date.now()}`,
+      type: 'file_change',
+      timestamp: new Date().toISOString(),
+      tool: 'FileWatcher',
+      data: data.changes || data,
+      impact: 'low'
+    };
+    setMcpEvents(prev => [...prev, fileEvent]);
+  };
+
+  // Handle 'git_event' message type
+  const handleGitEventMessage = (data: any) => {
+    console.log('Git event:', data);
+    const gitEvent: RawEvent = {
+      id: `git-${Date.now()}`,
+      type: 'git_event',
+      timestamp: new Date().toISOString(),
+      tool: 'Git',
+      data: data,
+      impact: 'medium'
+    };
+    setMcpEvents(prev => [...prev, gitEvent]);
+  };
+
+  // Handle 'events_logged' message type
+  const handleEventsLoggedMessage = (data: any) => {
+    console.log('Events logged:', data);
+    if (data.events && Array.isArray(data.events)) {
+      const newEvents = data.events.map((e: any) => ({
+        id: e.id || `event-${Date.now()}-${Math.random()}`,
+        type: e.type,
+        timestamp: e.timestamp || new Date().toISOString(),
+        tool: e.tool,
+        data: e.data,
+        impact: e.impact || 'low'
+      }));
+      setMcpEvents(prev => [...prev, ...newEvents]);
+    }
+  };
 
   // Connect to MCP WebSocket for real data
   useEffect(() => {
@@ -493,129 +663,7 @@ export function IDESessionDashboard() {
           ws.send(JSON.stringify({ type: 'get_analytics' }));
         };
 
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            console.log('MCP data received:', data);
-
-            // Handle different message types
-            if (data.type === 'connected') {
-              console.log('Connected with client ID:', data.clientId);
-
-              // Get existing events from ref (which may have been loaded from localStorage)
-              const existingEvents = mcpEventsRef.current;
-              console.log('Creating session with', existingEvents.length, 'existing events');
-
-              // Organize events into logical blocks and traces
-              const organizedBlocks = organizeEventsIntoBlocks(existingEvents);
-
-              const sessionStartTime = existingEvents.length > 0 && existingEvents[0]?.timestamp
-                ? existingEvents[0].timestamp
-                : new Date().toISOString();
-
-              // Calculate context usage
-              const tokensUsed = estimateTokenUsage(existingEvents);
-              const maxTokens = 200000;
-              const contextPercentage = Math.min(100, Math.round((tokensUsed / maxTokens) * 100));
-
-              const realtimeSession: Session = {
-                id: 'mcp-realtime',
-                startTime: sessionStartTime,
-                status: 'active',
-                title: 'Development Session - Frizy AI',
-                summary: `Active coding session with ${existingEvents.length} tracked events`,
-                metadata: {
-                  totalEvents: existingEvents.length,
-                  totalBlocks: organizedBlocks.length || 1,
-                  contextUsage: contextPercentage,
-                  duration: 0
-                },
-                blocks: organizedBlocks.length > 0 ? organizedBlocks : [{
-                  id: 'initial-block',
-                  sessionId: 'mcp-realtime',
-                  title: 'Starting Session',
-                  type: 'exploration',
-                  summary: 'Waiting for events...',
-                  startTime: new Date().toISOString(),
-                  status: 'in_progress',
-                  traces: [],
-                  metrics: {
-                    filesModified: 0,
-                    linesChanged: 0,
-                    toolsUsed: []
-                  }
-                }]
-              };
-              setCurrentSession(realtimeSession);
-              setSessions([realtimeSession]);
-            } else if (data.type === 'file_changes') {
-              console.log('File changes detected:', data);
-              setFileChanges(prev => [...prev, data]);
-              // Add file change as an event
-              const fileEvent: RawEvent = {
-                id: `file-${Date.now()}`,
-                timestamp: new Date().toISOString(),
-                type: 'file_change',
-                data: data,
-                impact: data.stats?.totalChanges > 5 ? 'high' : 'medium'
-              };
-              console.log('Creating file event:', fileEvent);
-              setMcpEvents(prev => {
-                const newEvents = [...prev, fileEvent];
-                console.log('Updated mcpEvents array:', newEvents);
-                console.log('Total events now:', newEvents.length);
-
-                // Check if we should create a new block or trace
-                if (currentSession && currentSession.id === 'mcp-realtime') {
-                  const lastEvent = prev[prev.length - 1];
-                  const timeSinceLastEvent = lastEvent
-                    ? (new Date().getTime() - new Date(lastEvent.timestamp).getTime()) / 1000 / 60 // minutes
-                    : 0;
-
-                  // Create new block after 15 minutes of inactivity
-                  if (timeSinceLastEvent > 15) {
-                    console.log('Creating new block due to time gap:', timeSinceLastEvent, 'minutes');
-                    // This would trigger new block creation logic
-                  }
-
-                  // Group events into traces by type (every 5 similar events)
-                  const recentFileChanges = prev.slice(-5).filter(e => e.type === 'file_change').length;
-                  if (recentFileChanges >= 5) {
-                    console.log('Should create new trace for file change batch');
-                  }
-                }
-
-                return newEvents;
-              });
-            } else if (data.type === 'git_event') {
-              console.log('Git event:', data);
-              const gitEvent: RawEvent = {
-                id: `git-${Date.now()}`,
-                timestamp: new Date().toISOString(),
-                type: 'tool_use',
-                tool: 'git',
-                data: data,
-                impact: 'medium'
-              };
-              setMcpEvents(prev => [...prev, gitEvent]);
-            } else if (data.type === 'events_logged') {
-              console.log('Events logged:', data);
-              // Add logged events to our events list
-              const newEvents: RawEvent[] = data.events.map((e: any) => ({
-                id: e.id,
-                timestamp: new Date().toISOString(),
-                type: e.type || 'tool_use',
-                tool: e.tool,
-                data: e.data,
-                impact: e.impact || 'low'
-              }));
-
-              setMcpEvents(prev => [...prev, ...newEvents]);
-            }
-          } catch (error) {
-            console.error('Error parsing MCP message:', error);
-          }
-        };
+        ws.onmessage = handleWebSocketMessage;
 
         ws.onerror = (error) => {
           console.error('MCP WebSocket error:', error);
@@ -869,8 +917,17 @@ export function IDESessionDashboard() {
       }
     ];
 
-    setSessions([activeSession, ...previousSessions]);
+    const allSessions = [activeSession, ...previousSessions];
+    setSessions(allSessions);
     setCurrentSession(activeSession);
+
+    // Persist to localStorage
+    try {
+      localStorage.setItem('mcp-sessions', JSON.stringify(allSessions));
+      console.log('Saved sample sessions to localStorage');
+    } catch (err) {
+      console.error('Failed to save sample sessions:', err);
+    }
   };
 
   // Helper to generate sample data
@@ -1132,6 +1189,22 @@ export function IDESessionDashboard() {
 
   return (
     <div className="h-screen bg-gray-950 text-gray-100 flex flex-col">
+      {/* Session State Message */}
+      {sessionStateMessage && (
+        <div className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-lg shadow-lg transition-all transform translate-y-0 animate-pulse ${
+          sessionStateMessage.type === 'success' ? 'bg-green-500/20 border border-green-500/50 text-green-400' :
+          sessionStateMessage.type === 'warning' ? 'bg-yellow-500/20 border border-yellow-500/50 text-yellow-400' :
+          'bg-blue-500/20 border border-blue-500/50 text-blue-400'
+        }`}>
+          <div className="flex items-center gap-2">
+            {sessionStateMessage.type === 'success' && <CheckCircle className="w-4 h-4" />}
+            {sessionStateMessage.type === 'warning' && <Clock className="w-4 h-4" />}
+            {sessionStateMessage.type === 'info' && <Activity className="w-4 h-4" />}
+            <span className="text-sm font-medium">{sessionStateMessage.text}</span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="h-12 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4">
         <div className="flex items-center gap-4">
@@ -1142,6 +1215,13 @@ export function IDESessionDashboard() {
             <h1 className="text-lg font-bold bg-gradient-to-r from-pink-500 via-yellow-500 to-cyan-500 bg-clip-text text-transparent">
               Frizy AI
             </h1>
+            <Link
+              to="/vertical-flow"
+              className="ml-4 px-3 py-1 text-sm bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-blue-500/10 hover:from-purple-500/20 hover:via-pink-500/20 hover:to-blue-500/20 border border-purple-500/30 rounded-lg flex items-center gap-1 transition-all"
+            >
+              <Workflow className="h-4 w-4" />
+              Context Flow
+            </Link>
           </div>
           <div className="h-6 w-px bg-gray-700" />
           
@@ -1272,6 +1352,18 @@ export function IDESessionDashboard() {
           >
             <Settings className="h-5 w-5 mx-auto text-gray-400" />
             <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">Settings</div>
+          </button>
+
+          {/* Load Sample Sessions (for testing) */}
+          <button
+            onClick={loadSampleSessions}
+            className="p-2 hover:bg-gray-800 group relative"
+            title="Load Sample Sessions (Click to generate sample session history)"
+          >
+            <Sparkles className="h-5 w-5 mx-auto text-yellow-400" />
+            <div className="text-[9px] mt-0.5 text-gray-400 group-hover:text-white">
+              {sessions.length === 0 ? 'Samples' : `${sessions.length}`}
+            </div>
           </button>
         </div>
 
@@ -2421,3 +2513,4 @@ What does this event tell us about the development activity? What actions were t
     </div>
   );
 }
+// trigger rebuild
